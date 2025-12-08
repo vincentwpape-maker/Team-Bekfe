@@ -43,7 +43,7 @@ h1, h2, h3, h4, h5, h6, p, label {
 # GOOGLE SHEETS CONFIG
 # -----------------------------
 SHEET_ID = "1XQEJH-s0Z6LrutwTTSvS0cYR1e3Tiqi6VqUkGQ-S3Lg"
-SHEET_NAME = "Form_Responses1"   # ← MUST MATCH EXACT TAB NAME
+SHEET_NAME = "Form_Responses1"   # Must match EXACT tab name in Google Sheets
 
 
 # -----------------------------
@@ -62,13 +62,10 @@ def load_sheet():
     )
 
     client = gspread.authorize(creds)
-
-    # OPEN CORRECT TAB
     sheet = client.open_by_key(SHEET_ID).worksheet(SHEET_NAME)
 
     df = pd.DataFrame(sheet.get_all_records())
 
-    # Clean name column
     if "Please list your name :" in df.columns:
         df["Please list your name :"] = (
             df["Please list your name :"]
@@ -119,7 +116,8 @@ with tabs[0]:
         total_minutes = df["How long did you work out for?  ( 25 mins  - 2hours )"].apply(convert_time).sum()
         total_hours = round(total_minutes / 60, 1)
 
-        st.markdown(f'<div class="stat-card"><h2>{total_hours}</h2><p>Total Hours</p></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="stat-card"><h2>{total_hours}</h2><p>Total Hours</p></div>',
+                    unsafe_allow_html=True)
 
     st.markdown("### 🔥 Recent Activity")
     st.dataframe(df.tail(20), use_container_width=True)
@@ -160,7 +158,7 @@ with tabs[2]:
 
 
 # -----------------------------
-# TAB 4 — PROFILE (Add Entry)
+# TAB 4 — ADD ENTRY
 # -----------------------------
 with tabs[3]:
     st.header("👤 Submit New Workout Entry")
