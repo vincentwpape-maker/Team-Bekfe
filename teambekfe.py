@@ -300,3 +300,4 @@ with tab_profile:
     st.dataframe(df[df[col_name] == selected][[col_timestamp, col_muscles, col_duration]].sort_values(col_timestamp, ascending=False), use_container_width=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
+
