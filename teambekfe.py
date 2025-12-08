@@ -43,10 +43,10 @@ h1, h2, h3, h4, h5, h6, p, label {
 # GOOGLE SHEETS CONFIG
 # -----------------------------
 SHEET_ID = "1XQEJH-s0Z6LrutwTTSvS0cYR1e3Tiqi6VqUkGQ-S3Lg"
-SHEET_NAME = "Data"   # ← IMPORTANT: using your new “Data” tab
+SHEET_NAME = "Form_Responses1"   # ← THIS IS THE TAB YOU SHOWED IN YOUR SCREENSHOT (not "Data")
 
 # -----------------------------
-# LOAD GOOGLE SHEET
+# LOAD GOOGLE SHEET (FIXED)
 # -----------------------------
 @st.cache_data(ttl=60)
 def load_sheet():
@@ -59,12 +59,13 @@ def load_sheet():
         st.secrets["gcp_service_account"],
         scopes=scope
     )
+
     client = gspread.authorize(creds)
 
     sheet = client.open_by_key(SHEET_ID).worksheet(SHEET_NAME)
     df = pd.DataFrame(sheet.get_all_records())
 
-    # Clean name issues: trim, lowercase, unify spelling
+    # Clean names
     if "Please list your name :" in df.columns:
         df["Please list your name :"] = (
             df["Please list your name :"]
@@ -78,12 +79,10 @@ def load_sheet():
 
 df, sheet = load_sheet()
 
-
 # -----------------------------
 # NAVIGATION TABS
 # -----------------------------
 tabs = st.tabs(["🏠 Dashboard", "🥇 Leaderboards", "🔥 Fitness Activity", "👤 Profile"])
-
 
 # -----------------------------
 # TAB 1 — DASHBOARD
@@ -124,7 +123,6 @@ with tabs[0]:
     st.markdown("### 🔥 Recent Activity")
     st.dataframe(df.tail(20), use_container_width=True)
 
-
 # -----------------------------
 # TAB 2 — LEADERBOARDS
 # -----------------------------
@@ -139,7 +137,6 @@ with tabs[1]:
     )
 
     st.dataframe(leaderboard, use_container_width=True)
-
 
 # -----------------------------
 # TAB 3 — FITNESS ACTIVITY
@@ -158,7 +155,6 @@ with tabs[2]:
 
     st.bar_chart(activity_counts)
 
-
 # -----------------------------
 # TAB 4 — PROFILE + ADD ENTRY
 # -----------------------------
@@ -169,14 +165,13 @@ with tabs[3]:
         name = st.text_input("Name")
         duration = st.text_input("Workout Duration (e.g., 30 mins)")
         muscle_groups = st.text_area("Muscle Groups Worked")
+
         submitted = st.form_submit_button("Submit Entry")
 
         if submitted:
             new_row = [pd.Timestamp.now(), name, "Yes", muscle_groups, duration]
             sheet.append_row(new_row)
             st.success("Entry added successfully! Refresh to see it.")
-
-
 
 
 
