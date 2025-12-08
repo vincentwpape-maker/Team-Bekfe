@@ -1,295 +1,223 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import altair as alt
+import plotly.express as px
 import datetime as dt
-import re
-from collections import defaultdict
+import gspread
+from google.oauth2.service_account import Credentials
 
-# -------------------------------------------------------------
-#                SOLO LEVELING THEME (GLOBAL CSS)
-# -------------------------------------------------------------
+# ---------------------------------------------
+# GOOGLE SHEETS CONNECTION
+# ---------------------------------------------
+SHEET_ID = "1XQEJH-s0Z6LrutwTTSvS0cYR1e3Tiqi6VqUkGQ-S3Lg"
+SHEET_NAME = "Form_Responses1"
+
+def load_sheet():
+    scope = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"], scopes=scope
+    )
+    client = gspread.authorize(creds)
+    sheet = client.open_by_key(SHEET_ID).worksheet(SHEET_NAME)
+    data = sheet.get_all_records()
+    return pd.DataFrame(data), sheet
+
+df, sheet = load_sheet()
+
+# ---------------------------------------------
+# NAME CLEANING (MERGE DUPLICATES)
+# ---------------------------------------------
+df["Please list your name :"] = (
+    df["Please list your name :"]
+    .str.strip()
+    .str.title()
+    .replace({
+        "Vincemt": "Vincent",
+        "Vince": "Vincent",
+        "Alian": "Alain",
+    })
+)
+
+# ---------------------------------------------
+# PROCESS DATA
+# ---------------------------------------------
+df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce")
+
+# Total sessions = every row where Yes or muscle group logged
+df["Session"] = 1
+
+# Extract hours from "25 mins – 2 hours"
+def parse_duration(x):
+    try:
+        x = x.lower()
+        if "hour" in x:
+            return float(x.split("hour")[0].strip())
+        if "min" in x:
+            return round(int(x.split("min")[0].strip()) / 60, 2)
+    except:
+        return 0
+    return 0
+
+df["Hours"] = df["How long did you work out for? ( 25 mins - 2hours )"].astype(str).apply(parse_duration)
+
+# Muscle group split
+df["Muscle Groups"] = df["What muscle groups did your work on? (Please list all that applies)"].astype(str)
+
+
+# ---------------------------------------------
+# PAGE CONFIG — Solo Leveling UI
+# ---------------------------------------------
+st.set_page_config(page_title="Team BekFê Fitness Tracker", layout="wide")
 st.markdown(
     """
     <style>
     body {
-        background-color: #0a0d12;
-        color: #e5f4ff;
+        background-color: #0a0f1a;
+        color: #d1e4ff;
     }
-
-    .main {
-        background-color: #0a0d12;
+    .big-title {
+        font-size: 42px;
+        font-weight: 900;
+        color: #7db3ff;
+        text-shadow: 0px 0px 15px #4ea4ff;
     }
-
-    /* Headings */
-    h1, h2, h3, h4 {
-        color: #67c1ff;
-        text-shadow: 0px 0px 10px #0e639c;
-        font-weight: 700 !important;
-    }
-
-    /* Tabs */
-    .stTabs [data-baseweb="tab-list"] {
-        background: #0f141b;
-        border-radius: 10px;
-        border: 1px solid #1f2a36;
-        padding: 5px;
-    }
-
-    .stTabs [data-baseweb="tab"] {
-        color: #a8c7ff;
-        font-weight: 600;
-    }
-
-    .stTabs [aria-selected="true"] {
-        background: #11324d;
-        color: #ffffff !important;
-        border-radius: 8px;
-        box-shadow: 0 0 8px #0e5b99;
-    }
-
-    /* Stat Panels */
-    .stat-box {
+    .card {
+        background: rgba(20,30,50,0.4);
         padding: 20px;
-        background: #11161f;
-        border: 1px solid #1d2b3c;
-        border-radius: 10px;
+        border-radius: 12px;
+        border: 1px solid rgba(120,150,255,0.3);
         text-align: center;
-        box-shadow: 0 0 12px #0e5b99;
-        margin-bottom: 15px;
+        color: #b8d4ff;
     }
-
-    .stat-value {
-        font-size: 38px;
+    .highlight {
+        font-size: 34px;
         font-weight: 800;
-        color: #67c1ff;
-        text-shadow: 0px 0px 15px #0e639c;
-    }
-
-    .stat-label {
-        font-size: 15px;
-        color: #9bb8d1;
+        color: #9cf2ff;
+        text-shadow: 0 0 10px #6cdcff;
     }
     </style>
     """,
-    unsafe_allow_html=True
+    unsafe_allow_html=True,
 )
 
-# -------------------------------------------------------------
-#                LOAD GOOGLE SHEET DATA
-# -------------------------------------------------------------
-CSV_URL = "https://docs.google.com/spreadsheets/d/1XQEJH-s0Z6LrutwTTSvS0cYR1e3Tiqi6VqUkGQ-S3Lg/export?format=csv&gid=2121731071"
-
-@st.cache_data(ttl=300)
-def load_data():
-    df = pd.read_csv(CSV_URL)
-    df.columns = [c.strip() for c in df.columns]
-    return df
-
-df = load_data()
-
-col_timestamp = df.columns[0]
-col_name = df.columns[1]
-col_muscles = df.columns[3]
-col_duration = df.columns[4]
-
-df[col_timestamp] = pd.to_datetime(df[col_timestamp], errors="coerce")
+st.markdown('<div class="big-title">⚔️ Team BekFê Fitness Tracker ⚔️</div>', unsafe_allow_html=True)
 
 
-# -------------------------------------------------------------
-#                NAME NORMALIZATION + MERGING
-# -------------------------------------------------------------
-def clean_name(name):
-    if not isinstance(name, str):
-        return ""
-    n = name.strip().lower()
-    n = re.sub(r"[^a-z0-9 ]", "", n)
-    n = re.sub(r"\s+", " ", n)
-
-    corrections = {
-        "vincent": "Vincent",
-        "alain": "Alain",
-        "danimix": "Danimix",
-        "dani mix": "Danimix",
-        "dimitri": "Dimitri",
-        "douglas": "Douglas",
-        "louis": "Louis",
-        "bousik": "Bousik",
-        "gregory": "Gregory",
-        "mikael": "Mikael",
-        "junior": "Junior",
-    }
-
-    if n in corrections:
-        return corrections[n]
-    return n.title()
-
-df[col_name] = df[col_name].apply(clean_name)
-
-# -------------------------------------------------------------
-#                DURATION PARSER
-# -------------------------------------------------------------
-def parse_duration(text):
-    if not isinstance(text, str):
-        return 0
-    s = text.lower()
-
-    hours = 0
-    minutes = 0
-
-    h = re.search(r"(\d+)\s*(hour|hr|h)", s)
-    m = re.search(r"(\d+)\s*(minute|min|m)", s)
-
-    if h:
-        hours = int(h.group(1))
-    if m:
-        minutes = int(m.group(1))
-
-    if not h and not m:
-        nums = re.findall(r"\d+", s)
-        if len(nums) == 1:
-            minutes = int(nums[0])
-        elif len(nums) == 2:
-            hours = int(nums[0])
-            minutes = int(nums[1])
-
-    return hours * 60 + minutes
-
-df["minutes"] = df[col_duration].apply(parse_duration)
-
-# -------------------------------------------------------------
-#                BUILD SESSIONS + MUSCLE TABLE
-# -------------------------------------------------------------
-sessions = df.groupby(col_name).size().rename("sessions")
-duration = df.groupby(col_name)["minutes"].sum().rename("total_minutes")
-
-def extract_muscles(cell):
-    if not isinstance(cell, str):
-        return []
-    parts = [p.split("(")[0].strip() for p in cell.split(",")]
-    return [p for p in parts if p]
-
-user_muscle_counts = defaultdict(lambda: defaultdict(int))
-all_muscles = set()
-
-for _, row in df.iterrows():
-    name = row[col_name]
-    muscles = extract_muscles(row[col_muscles])
-    for m in muscles:
-        user_muscle_counts[name][m] += 1
-        all_muscles.add(m)
-
-users = sorted(sessions.index.tolist())
-all_muscles = sorted(all_muscles)
-
-activity_matrix = pd.DataFrame(0, index=all_muscles, columns=users)
-
-for user, mus_dict in user_muscle_counts.items():
-    for m, v in mus_dict.items():
-        activity_matrix.loc[m, user] = v
-
-
-# -------------------------------------------------------------
-#                          UI TABS
-# -------------------------------------------------------------
-st.title("⚔️ Team BekFe Fitness Tracker ⚔️")
-
-tab_dash, tab_lb, tab_activity, tab_profile = st.tabs(
-    ["Dashboard", "Leaderboards", "Fitness Activity", "Profile"]
+# ---------------------------------------------
+# TABS
+# ---------------------------------------------
+tab_dash, tab_lb, tab_fitness, tab_profile, tab_add = st.tabs(
+    ["Dashboard", "Leaderboards", "Fitness Activity", "Profile", "Add Entry"]
 )
 
-# -------------------------------------------------------------
-#                    DASHBOARD TAB
-# -------------------------------------------------------------
+# ---------------------------------------------
+# DASHBOARD
+# ---------------------------------------------
 with tab_dash:
-    st.header("📊 Dashboard Overview")
+    st.subheader("📊 Dashboard Overview")
 
-    c1, c2, c3, c4 = st.columns(4)
-    
-    c1.markdown(f"<div class='stat-box'><div class='stat-value'>{len(df)}</div><div class='stat-label'>Form Entries</div></div>", unsafe_allow_html=True)
-    c2.markdown(f"<div class='stat-box'><div class='stat-value'>{df[col_name].nunique()}</div><div class='stat-label'>Active Members</div></div>", unsafe_allow_html=True)
-    c3.markdown(f"<div class='stat-box'><div class='stat-value'>{int(sessions.sum())}</div><div class='stat-label'>Total Sessions</div></div>", unsafe_allow_html=True)
-    c4.markdown(f"<div class='stat-box'><div class='stat-value'>{round(duration.sum()/60,1)}</div><div class='stat-label'>Total Hours</div></div>", unsafe_allow_html=True)
+    col1, col2, col3, col4 = st.columns(4)
+    col1.markdown(f"<div class='card'><div class='highlight'>{len(df)}</div>Form Entries</div>", unsafe_allow_html=True)
+    col2.markdown(f"<div class='card'><div class='highlight'>{df['Please list your name :'].nunique()}</div>Active Members</div>", unsafe_allow_html=True)
+    col3.markdown(f"<div class='card'><div class='highlight'>{df['Session'].sum()}</div>Total Sessions</div>", unsafe_allow_html=True)
+    col4.markdown(f"<div class='card'><div class='highlight'>{round(df['Hours'].sum(),1)}</div>Total Hours</div>", unsafe_allow_html=True)
 
-    st.markdown("### 🔥 Recent Activity")
-    st.dataframe(
-        df[[col_timestamp, col_name, col_muscles, col_duration]].sort_values(
-            col_timestamp, ascending=False
-        ),
-        use_container_width=True
-    )
+    st.subheader("🔥 Recent Activity")
+    st.dataframe(df.sort_values("Timestamp", ascending=False).head(15), use_container_width=True)
 
-# -------------------------------------------------------------
-#                    LEADERBOARD TAB
-# -------------------------------------------------------------
+
+# ---------------------------------------------
+# LEADERBOARDS
+# ---------------------------------------------
 with tab_lb:
-    st.header("🏆 Leaderboard – Total Sessions")
+    st.subheader("🏆 Leaderboard — Total Sessions")
 
-    lb = pd.concat([sessions, duration], axis=1).fillna(0).reset_index()
-    lb["hours"] = (lb["total_minutes"] / 60).round(1)
-    lb = lb.rename(columns={col_name: "User"})
-    lb = lb.sort_values("sessions", ascending=False).reset_index(drop=True)
-    lb.index = lb.index + 1
-    lb.insert(0, "Rank", lb.index)
+    leaderboard = (
+        df.groupby("Please list your name :")["Session"]
+        .sum()
+        .sort_values(ascending=False)
+        .reset_index()
+    )
+    leaderboard.columns = ["Name", "Total Sessions"]
 
-    st.dataframe(lb, use_container_width=True)
+    st.dataframe(leaderboard, use_container_width=True)
 
-# -------------------------------------------------------------
-#                 FITNESS ACTIVITY TAB
-# -------------------------------------------------------------
-with tab_activity:
-    st.header("💠 Muscle Activity Heatmap")
 
-    heat_df = (
-        activity_matrix.reset_index()
-        .melt(id_vars="index", var_name="User", value_name="Count")
-        .rename(columns={"index": "Muscle"})
+# ---------------------------------------------
+# FITNESS ACTIVITY
+# ---------------------------------------------
+with tab_fitness:
+    st.subheader("💪 Muscle Group Activity by User")
+
+    muscle_counts = (
+        df.assign(Muscle=df["Muscle Groups"].str.split(", "))
+        .explode("Muscle")
+        .groupby(["Please list your name :", "Muscle"])
+        .size()
+        .reset_index(name="Count")
     )
 
-    chart = alt.Chart(heat_df).mark_rect().encode(
-        x=alt.X("User:O", title="User"),
-        y=alt.Y("Muscle:O", title="Muscle Group"),
-        color=alt.Color("Count:Q", scale=alt.Scale(scheme="blues")),
-        tooltip=["User", "Muscle", "Count"]
-    )
+    st.dataframe(muscle_counts, use_container_width=True)
 
-    st.altair_chart(chart, use_container_width=True)
 
-    st.markdown("### Raw Table")
-    st.dataframe(activity_matrix, use_container_width=True)
-
-# -------------------------------------------------------------
-#                       PROFILE TAB
-# -------------------------------------------------------------
+# ---------------------------------------------
+# PROFILE SECTION
+# ---------------------------------------------
 with tab_profile:
-    st.header("🧍 Solo Leveling Profile Panel")
+    st.subheader("🧍 Profile Stats")
 
-    selected = st.selectbox("Select Member", users)
+    user_list = sorted(df["Please list your name :"].unique())
+    selected = st.selectbox("Choose a user", user_list)
 
-    total_sessions = sessions[selected]
-    total_minutes = duration[selected]
-    total_hours = round(total_minutes / 60, 1)
+    user_df = df[df["Please list your name :"] == selected]
 
-    today = dt.date.today()
-    season_end = dt.date(today.year, 12, 31)
-    days_left = (season_end - today).days
+    level = len(user_df)
+    total_hours = round(user_df["Hours"].sum(), 1)
 
-    st.markdown(f"## ⚔️ {selected} – Status Window")
+    st.markdown(
+        f"""
+        <div class='card'>
+            <div class='highlight'>Level {level}</div>
+            <strong>Total Hours:</strong> {total_hours}<br>
+            <strong>Total Sessions:</strong> {len(user_df)}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    c1, c2, c3 = st.columns(3)
 
-    c1.markdown(f"<div class='stat-box'><div class='stat-value'>{total_sessions}</div><div class='stat-label'>Fitness Days</div></div>", unsafe_allow_html=True)
-    c2.markdown(f"<div class='stat-box'><div class='stat-value'>{total_hours}</div><div class='stat-label'>Total Hours</div></div>", unsafe_allow_html=True)
-    c3.markdown(f"<div class='stat-box'><div class='stat-value'>{days_left}</div><div class='stat-label'>Days Left in Season</div></div>", unsafe_allow_html=True)
+# ---------------------------------------------
+# ADD ENTRY TAB
+# ---------------------------------------------
+with tab_add:
+    st.subheader("📝 Add a New Workout Entry")
 
-    st.markdown("### 💪 Top Muscles Used")
-    mus = pd.Series(user_muscle_counts[selected]).sort_values(ascending=False)
-    st.write(mus.head(5))
+    name = st.text_input("Your Name")
+    duration = st.text_input("Workout Duration (ex: 45 mins or 1 hour)")
+    did = st.radio("Did you workout today?", ["Yes", "No"])
+    muscles = st.multiselect(
+        "Muscle Groups",
+        [
+            "Chest","Back","Biceps","Triceps","Forearms","Shoulders","Hips","Legs",
+            "Glutes","Abs","Cardio","Calisthenics (Bodyweight exercises)",
+            "Stretching","HIIT (High-Intensity Interval Training)",
+            "Sports (Tennis,Soccer..etc)"
+        ]
+    )
 
-    st.markdown("### 💤 Least Used Muscles")
-    st.write(mus.tail(5))
-
-    st.markdown("### 📘 Workout Log")
-    log = df[df[col_name] == selected][[col_timestamp, col_muscles, col_duration]]
-    st.dataframe(log.sort_values(col_timestamp, ascending=False), use_container_width=True)
+    if st.button("Submit"):
+        if name.strip() == "":
+            st.error("Name is required.")
+        else:
+            row = [
+                dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                name,
+                ", ".join(muscles),
+                duration,
+                did
+            ]
+            sheet.append_row(row)
+            st.success("Entry added successfully!")
 
