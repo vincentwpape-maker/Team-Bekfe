@@ -32,25 +32,25 @@ st.markdown(
 
     /* Outer APP frame */
     .app-frame {
-        border: 4px solid #30c8ff;
-        border-radius: 20px;
-        padding: 25px 30px 30px 30px;
+        border: 3px solid #30c8ff;
+        border-radius: 18px;
+        padding: 20px 24px 26px 24px;
         margin-top: 10px;
         box-shadow:
-            0 0 20px rgba(48, 200, 255, 0.8),
-            0 0 45px rgba(15, 115, 210, 0.6);
+            0 0 18px rgba(48, 200, 255, 0.7),
+            0 0 40px rgba(15, 115, 210, 0.5);
         background: radial-gradient(circle at top, #08101d 0, #05070c 55%, #020308 100%);
     }
 
     /* Inner section frame (per tab) */
     .section-frame {
-        border: 2px solid #1e6fb5;
-        border-radius: 16px;
-        padding: 20px 22px 25px 22px;
-        margin-top: 10px;
+        border: 1px solid #1e6fb5;
+        border-radius: 14px;
+        padding: 18px 20px 22px 20px;
+        margin-top: 8px;
         box-shadow:
-            0 0 18px rgba(30, 111, 181, 0.7),
-            0 0 28px rgba(0, 0, 0, 0.9) inset;
+            0 0 14px rgba(30, 111, 181, 0.7),
+            0 0 20px rgba(0, 0, 0, 0.9) inset;
         background: linear-gradient(135deg, #070b13 0%, #05060b 40%, #090f1b 100%);
     }
 
@@ -64,7 +64,7 @@ st.markdown(
             0 0 6px #ffffff,
             0 0 16px #3f9dff,
             0 0 32px #00c4ff;
-        margin-bottom: 10px;
+        margin-bottom: 6px;
     }
 
     /* Section headers */
@@ -79,7 +79,7 @@ st.markdown(
         margin-bottom: 15px;
     }
 
-    /* Sub headers (like small section headings) */
+    /* Sub headers (smaller section headings) */
     .sub-header {
         font-size: 18px;
         font-weight: 700;
@@ -138,7 +138,7 @@ st.markdown(
         color: #9bb8d1;
     }
 
-    /* Small stat boxes for profile summary line */
+    /* Season summary line in profile */
     .summary-line {
         font-size: 14px;
         color: #c3ddff;
@@ -150,12 +150,12 @@ st.markdown(
         margin-bottom: 10px;
     }
 
-    /* Dataframe tweaks */
+    /* Dataframe hover */
     .dataframe tbody tr:hover {
         background-color: rgba(25, 118, 210, 0.25) !important;
     }
 
-    /* Make Plotly charts blend better */
+    /* Plotly background transparent */
     .js-plotly-plot .plotly {
         background: transparent !important;
     }
@@ -182,9 +182,9 @@ def load_data():
 df = load_data()
 
 col_timestamp = df.columns[0]
-col_name = df.columns[1]
-col_muscles = df.columns[3]
-col_duration = df.columns[4]
+col_name      = df.columns[1]
+col_muscles   = df.columns[3]
+col_duration  = df.columns[4]
 
 df[col_timestamp] = pd.to_datetime(df[col_timestamp], errors="coerce")
 
@@ -219,35 +219,43 @@ def clean_name(name):
 df[col_name] = df[col_name].apply(clean_name)
 
 # -------------------------------------------------------------
-#                DURATION PARSER
+#                DURATION PARSER  (minutes)
 # -------------------------------------------------------------
 def parse_duration(text: str) -> int:
-    """Return duration in minutes."""
+    """Parse a duration string like '1 hour 30 mins', '45 mins', '1h30' into minutes."""
     if not isinstance(text, str):
         return 0
-    s = text.lower()
+    s = text.lower().strip()
 
     hours = 0
     minutes = 0
 
-    h = re.search(r"(\d+)\s*(hour|hr|h)", s)
-    m = re.search(r"(\d+)\s*(minute|min|m)", s)
+    # Explicit hour/minute words
+    h = re.search(r"(\d+)\s*(hour|hours|hr|hrs|h)\b", s)
+    m = re.search(r"(\d+)\s*(minute|minutes|min|mins|m)\b", s)
 
     if h:
         hours = int(h.group(1))
     if m:
         minutes = int(m.group(1))
 
-    # Fallbacks for things like "1h30" or "45"
+    # Fallbacks for compact formats ("1h30", "90", etc.)
     if not h and not m:
-        nums = re.findall(r"\d+", s)
-        if len(nums) == 1:
-            minutes = int(nums[0])
-        elif len(nums) == 2:
-            hours = int(nums[0])
-            minutes = int(nums[1])
+        # 1h30, 1hr30m, etc.
+        compact = re.search(r"(\d+)\s*h\s*(\d+)\s*m", s)
+        if compact:
+            hours = int(compact.group(1))
+            minutes = int(compact.group(2))
+        else:
+            nums = re.findall(r"\d+", s)
+            if len(nums) == 1:
+                minutes = int(nums[0])
+            elif len(nums) == 2:
+                hours = int(nums[0])
+                minutes = int(nums[1])
 
-    return hours * 60 + minutes
+    total = hours * 60 + minutes
+    return max(total, 0)
 
 df["minutes"] = df[col_duration].apply(parse_duration)
 
@@ -264,6 +272,7 @@ def extract_muscles(cell):
     return [p for p in parts if p]
 
 user_muscle_counts = defaultdict(lambda: defaultdict(int))
+muscle_popularity = defaultdict(int)
 all_muscles = set()
 
 for _, row in df.iterrows():
@@ -271,6 +280,7 @@ for _, row in df.iterrows():
     muscles = extract_muscles(row[col_muscles])
     for m in muscles:
         user_muscle_counts[name][m] += 1
+        muscle_popularity[m] += 1
         all_muscles.add(m)
 
 users = sorted(sessions.index.tolist())
@@ -281,9 +291,10 @@ for user, mus_dict in user_muscle_counts.items():
     for m, v in mus_dict.items():
         activity_matrix.loc[m, user] = v
 
-# Extra aggregation for plots
+# Extra aggregations
 df["date"] = df[col_timestamp].dt.date
 sessions_per_day = df.groupby("date").size().reset_index(name="sessions")
+
 minutes_per_user = duration.reset_index().rename(columns={col_name: "User"})
 overall_muscle_counts = (
     df[col_muscles]
@@ -299,7 +310,6 @@ overall_muscle_counts.columns = ["Muscle", "Count"]
 #                APP FRAME START
 # -------------------------------------------------------------
 st.markdown("<div class='app-frame'>", unsafe_allow_html=True)
-
 st.markdown("<div class='main-title'>⚔️ Team BekFê Fitness Tracker ⚔️</div>", unsafe_allow_html=True)
 
 tab_dash, tab_lb, tab_activity, tab_profile = st.tabs(
@@ -311,7 +321,6 @@ tab_dash, tab_lb, tab_activity, tab_profile = st.tabs(
 # -------------------------------------------------------------
 with tab_dash:
     st.markdown("<div class='section-frame'>", unsafe_allow_html=True)
-
     st.markdown("<div class='glow-header'>Dashboard Overview</div>", unsafe_allow_html=True)
 
     c1, c2, c3, c4 = st.columns(4)
@@ -354,7 +363,6 @@ with tab_dash:
 # -------------------------------------------------------------
 with tab_lb:
     st.markdown("<div class='section-frame'>", unsafe_allow_html=True)
-
     st.markdown("<div class='glow-header'>Leaderboard</div>", unsafe_allow_html=True)
 
     lb = pd.concat([sessions, duration], axis=1).fillna(0).reset_index()
@@ -373,10 +381,9 @@ with tab_lb:
 # -------------------------------------------------------------
 with tab_activity:
     st.markdown("<div class='section-frame'>", unsafe_allow_html=True)
-
     st.markdown("<div class='glow-header'>Fitness Activity</div>", unsafe_allow_html=True)
 
-    # 1) Sessions over time
+    # --- Sessions over time (line) ---
     st.markdown("<div class='sub-header'>📆 Sessions Over Time</div>", unsafe_allow_html=True)
     if not sessions_per_day.empty:
         fig_time = px.line(
@@ -386,12 +393,12 @@ with tab_activity:
             markers=True,
             labels={"date": "Date", "sessions": "Sessions"},
         )
-        fig_time.update_layout(height=300, margin=dict(l=10, r=10, t=30, b=10))
+        fig_time.update_layout(height=320, margin=dict(l=10, r=10, t=30, b=10))
         st.plotly_chart(fig_time, use_container_width=True)
     else:
         st.write("No time-series data yet.")
 
-    # 2) Total minutes per member
+    # --- Total minutes per member ---
     st.markdown("<div class='sub-header'>🧍 Total Minutes per Member</div>", unsafe_allow_html=True)
     if not minutes_per_user.empty:
         fig_minutes = px.bar(
@@ -400,11 +407,28 @@ with tab_activity:
             y="total_minutes",
             labels={"total_minutes": "Total Minutes"},
         )
-        fig_minutes.update_layout(height=300, margin=dict(l=10, r=10, t=30, b=10))
+        fig_minutes.update_layout(height=320, margin=dict(l=10, r=10, t=30, b=10))
         st.plotly_chart(fig_minutes, use_container_width=True)
 
-    # 3) Overall muscle usage
-    st.markdown("<div class='sub-header'>💪 Overall Muscle Group Distribution</div>", unsafe_allow_html=True)
+    # --- Most trained muscle groups (bar) ---
+    st.markdown("<div class='sub-header'>🏋️ Most Trained Muscle Groups</div>", unsafe_allow_html=True)
+    if muscle_popularity:
+        pop_df = pd.DataFrame({
+            "Muscle Group": list(muscle_popularity.keys()),
+            "Count": list(muscle_popularity.values())
+        }).sort_values("Count", ascending=False)
+        fig_pop = px.bar(
+            pop_df,
+            x="Muscle Group",
+            y="Count",
+            color="Count",
+            color_continuous_scale="Blues",
+        )
+        fig_pop.update_layout(height=320, margin=dict(l=10, r=10, t=30, b=10))
+        st.plotly_chart(fig_pop, use_container_width=True)
+
+    # --- Muscle Distribution pie chart ---
+    st.markdown("<div class='sub-header'>🥧 Muscle Distribution</div>", unsafe_allow_html=True)
     if not overall_muscle_counts.empty:
         fig_muscles = px.pie(
             overall_muscle_counts,
@@ -412,10 +436,24 @@ with tab_activity:
             values="Count",
             hole=0.45,
         )
-        fig_muscles.update_layout(height=350, margin=dict(l=10, r=10, t=30, b=10))
+        fig_muscles.update_layout(height=360, margin=dict(l=10, r=10, t=30, b=10))
         st.plotly_chart(fig_muscles, use_container_width=True)
 
-    # 4) Raw matrix (optional but useful)
+    # --- Training frequency (7-day rolling avg) ---
+    st.markdown("<div class='sub-header'>📈 Training Frequency (7-Day Avg)</div>", unsafe_allow_html=True)
+    if not sessions_per_day.empty:
+        freq_df = sessions_per_day.copy()
+        freq_df["rolling_7"] = freq_df["sessions"].rolling(7, min_periods=1).mean()
+        fig_freq = px.line(
+            freq_df,
+            x="date",
+            y="rolling_7",
+            labels={"date": "Date", "rolling_7": "Sessions (7-day avg)"},
+        )
+        fig_freq.update_layout(height=320, margin=dict(l=10, r=10, t=30, b=10))
+        st.plotly_chart(fig_freq, use_container_width=True)
+
+    # --- User × Muscle matrix table ---
     st.markdown("<div class='sub-header'>📊 User × Muscle Frequency Table</div>", unsafe_allow_html=True)
     st.dataframe(activity_matrix, use_container_width=True)
 
@@ -426,7 +464,6 @@ with tab_activity:
 # -------------------------------------------------------------
 with tab_profile:
     st.markdown("<div class='section-frame'>", unsafe_allow_html=True)
-
     st.markdown("<div class='glow-header'>Profile</div>", unsafe_allow_html=True)
 
     if not users:
@@ -435,7 +472,7 @@ with tab_profile:
     else:
         selected = st.selectbox("Select Member", users)
 
-        total_sessions = int(sessions[selected])
+        total_sessions_user = int(sessions[selected])
         total_minutes_user = int(duration[selected])
         total_hours_user = round(total_minutes_user / 60, 1)
 
@@ -458,7 +495,7 @@ with tab_profile:
 
         c1, c2, c3 = st.columns(3)
         c1.markdown(
-            f"<div class='stat-box'><div class='stat-value'>{total_sessions}</div>"
+            f"<div class='stat-box'><div class='stat-value'>{total_sessions_user}</div>"
             "<div class='stat-label'>Total Sessions</div></div>",
             unsafe_allow_html=True,
         )
