@@ -1,268 +1,198 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import plotly.express as px
 import datetime as dt
 import re
 from collections import defaultdict
 
 # ---------- CONFIG ----------
 CSV_URL = "https://docs.google.com/spreadsheets/d/1XQEJH-s0Z6LrutwTTSvS0cYR1e3Tiqi6VqUkGQ-S3Lg/export?format=csv&gid=2121731071"
-SEASON_END_MONTH = 12   # December
-SEASON_END_DAY = 31     # 31st
 
-st.set_page_config(
-    page_title="Team BekFe Fitness",
-    layout="wide",
-    page_icon="💪"
-)
+st.set_page_config(page_title="Team BekFe Fitness", layout="wide")
 
 # ---------- HELPERS ----------
 
 @st.cache_data(ttl=300)
 def load_data():
     df = pd.read_csv(CSV_URL)
-    # Try to normalize column names a bit
     df.columns = [c.strip() for c in df.columns]
-
-    # Identify columns by partial name (handles small edits in the form)
-    def find_col(pattern):
-        for c in df.columns:
-            if pattern.lower() in c.lower():
-                return c
-        raise ValueError(f"Column with pattern '{pattern}' not found")
-
-    cols = {
-        "timestamp": find_col("timestamp"),
-        "name": find_col("please list your name"),
-        "did_exercise": find_col("did you engage"),
-        "muscles": find_col("muscle"),
-        "duration": find_col("how long did you work out")
-    }
-
-    # Convert timestamp
-    df[cols["timestamp"]] = pd.to_datetime(df[cols["timestamp"]], errors="coerce")
-
-    return df, cols
+    return df
 
 
-def parse_duration_to_minutes(text: str) -> float:
-    """
-    Convert messy duration text to minutes.
-    Handles things like:
-    - '2 hours'
-    - '1 hour 30 minutes'
-    - '45 mins'
-    - '1h'
-    - '1h 15'
-    - '1 hour of hit cardio, p90x style'
-    """
+def parse_duration(text):
     if not isinstance(text, str):
-        return np.nan
-
-    s = text.lower().strip()
-
-    # Replace commas with spaces for easier matching
-    s = s.replace(",", " ")
-
-    # Patterns for hours and minutes
-    hour_pattern = r"(\d+)\s*(hour|hours|hr|hrs|h)\b"
-    minute_pattern = r"(\d+)\s*(minute|minutes|min|mins|m)\b"
-
+        return 0
+    s = text.lower()
     hours = 0
     minutes = 0
 
-    # Find all explicit hour & minute mentions
-    h_match = re.search(hour_pattern, s)
-    m_match = re.search(minute_pattern, s)
+    h = re.search(r"(\d+)\s*(hour|hr|h)", s)
+    m = re.search(r"(\d+)\s*(minute|min|m)", s)
 
-    if h_match:
-        hours = int(h_match.group(1))
-    if m_match:
-        minutes = int(m_match.group(1))
+    if h:
+        hours = int(h.group(1))
+    if m:
+        minutes = int(m.group(1))
 
-    # If we still have nothing, try a bare number
-    if not h_match and not m_match:
+    if not h and not m:
         nums = re.findall(r"\d+", s)
         if len(nums) == 1:
-            # Assume minutes if e.g. '45'
             minutes = int(nums[0])
         elif len(nums) == 2:
-            # Assume H:M like '1 30'
             hours = int(nums[0])
             minutes = int(nums[1])
 
-    total_minutes = hours * 60 + minutes
-    if total_minutes == 0:
-        return np.nan
-    return total_minutes
+    return hours * 60 + minutes
 
 
-def build_user_stats(df, cols):
-    # Filter only "Yes" days just in case
-    df_yes = df[df[cols["did_exercise"]].astype(str).str.lower() == "yes"].copy()
-
-    # Sessions per user
-    sessions = df_yes.groupby(cols["name"]).size().rename("sessions")
-
-    # Duration
-    df_yes["minutes"] = df_yes[cols["duration"]].apply(parse_duration_to_minutes)
-    duration = df_yes.groupby(cols["name"])["minutes"].sum().rename("total_minutes")
-
-    # Muscles per user
-    user_muscle_counts = defaultdict(lambda: defaultdict(int))
-    all_muscles = set()
-
-    for _, row in df_yes.iterrows():
-        name = str(row[cols["name"]]).strip()
-        cell = str(row[cols["muscles"]])
-        parts = [p.strip() for p in cell.split(",") if p.strip()]
-        for p in parts:
-            # Remove text in parentheses so
-            # "Calisthenics (Bodyweight exercises)" -> "Calisthenics"
-            base = p.split("(")[0].strip()
-            if not base:
-                continue
-            all_muscles.add(base)
-            user_muscle_counts[name][base] += 1
-
-    all_muscles = sorted(all_muscles)
-    users = sorted(sessions.index.tolist())
-
-    # Muscle activity table (rows = muscle, cols = user)
-    muscle_table = pd.DataFrame(0, index=all_muscles, columns=users, dtype=int)
-    for user, mus_dict in user_muscle_counts.items():
-        for m, count in mus_dict.items():
-            if m in muscle_table.index and user in muscle_table.columns:
-                muscle_table.loc[m, user] = count
-
-    return sessions, duration, muscle_table, user_muscle_counts
+def extract_muscles(cell):
+    if not isinstance(cell, str):
+        return []
+    parts = [p.split("(")[0].strip() for p in cell.split(",")]
+    return [p for p in parts if p]
 
 
-# ---------- MAIN APP ----------
+# ---------- LOAD DATA ----------
+df = load_data()
 
-df, cols = load_data()
-sessions, duration, muscle_table, user_muscle_counts = build_user_stats(df, cols)
+col_timestamp = df.columns[0]
+col_name = df.columns[1]
+col_muscles = df.columns[3]
+col_duration = df.columns[4]
 
+df[col_timestamp] = pd.to_datetime(df[col_timestamp], errors="coerce")
+df["minutes"] = df[col_duration].apply(parse_duration)
+
+# 1 session = 1 timestamp row
+sessions = df.groupby(col_name).size().rename("sessions")
+
+# total minutes per user
+duration = df.groupby(col_name)["minutes"].sum().rename("total_minutes")
+
+# ---------- MUSCLE STATS ----------
+user_muscle_counts = defaultdict(lambda: defaultdict(int))
+all_muscles = set()
+
+for _, row in df.iterrows():
+    name = row[col_name]
+    muscles = extract_muscles(row[col_muscles])
+    for m in muscles:
+        user_muscle_counts[name][m] += 1
+        all_muscles.add(m)
+
+users = sorted(sessions.index.tolist())
+all_muscles = sorted(all_muscles)
+
+activity_matrix = pd.DataFrame(0, index=all_muscles, columns=users)
+
+for user, mus_dict in user_muscle_counts.items():
+    for m, v in mus_dict.items():
+        activity_matrix.loc[m, user] = v
+
+
+# ---------- UI ----------
 st.title("🏛️ Team BekFe Fitness Tracker")
 
 tab_dashboard, tab_leaderboard, tab_activity, tab_profile = st.tabs(
     ["🏠 Dashboard", "🏆 Leaderboards", "📊 Fitness Activity", "🧍 Profile"]
 )
 
-# ---------- DASHBOARD ----------
+# ------------------- DASHBOARD -------------------
 with tab_dashboard:
     st.subheader("Overview")
-
-    total_entries = len(df)
-    total_users = df[cols["name"]].nunique()
-    total_sessions = int(sessions.sum())
-    total_minutes_all = float(duration.sum())
-    total_hours_all = round(total_minutes_all / 60.0, 1)
-
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Form Entries", total_entries)
-    c2.metric("Active Members", total_users)
-    c3.metric("Total Sessions", total_sessions)
-    c4.metric("Total Hours (approx.)", total_hours_all)
 
-    st.markdown("---")
-    st.subheader("Recent Activity")
-    df_display = df[[cols["timestamp"], cols["name"], cols["muscles"], cols["duration"]]].sort_values(
-        by=cols["timestamp"], ascending=False
-    )
-    st.dataframe(df_display.head(25), use_container_width=True)
+    c1.metric("Form Entries", len(df))
+    c2.metric("Active Members", df[col_name].nunique())
+    c3.metric("Total Sessions", int(sessions.sum()))
+    c4.metric("Total Hours", round(duration.sum() / 60, 1))
 
-# ---------- LEADERBOARD ----------
-with tab_leaderboard:
-    st.subheader("🏆 Leaderboard – Total Fitness Sessions")
-
-    lb = (
-        pd.concat([sessions, duration], axis=1)
-        .fillna(0)
-        .reset_index()
-        .rename(columns={
-            cols["name"]: "Username",
-            "sessions": "Total Fitness Sessions",
-            "total_minutes": "Total Minutes"
-        })
-    )
-
-    lb["Total Hours"] = (lb["Total Minutes"] / 60).round(1)
-    lb = lb.sort_values(by="Total Fitness Sessions", ascending=False).reset_index(drop=True)
-    lb.index = lb.index + 1  # Rank starting at 1
-    lb.insert(0, "Rank", lb.index)
-
+    st.markdown("### Recent Activity")
     st.dataframe(
-        lb[["Rank", "Username", "Total Fitness Sessions", "Total Hours"]],
-        use_container_width=True,
-        height=400
-    )
-
-# ---------- FITNESS ACTIVITY ----------
-with tab_activity:
-    st.subheader("📊 Muscle Group Activity by User")
-
-    # Add a "Total" row
-    activity = muscle_table.copy()
-    activity.loc["Total"] = activity.sum(axis=0)
-
-    st.write("Counts = number of sessions where that muscle group was logged.")
-    st.dataframe(
-        activity.style.background_gradient(axis=None),
+        df[[col_timestamp, col_name, col_muscles, col_duration]].sort_values(
+            col_timestamp, ascending=False
+        ),
         use_container_width=True
     )
 
-# ---------- PROFILE ----------
+
+# ------------------- LEADERBOARD -------------------
+with tab_leaderboard:
+    st.subheader("🏆 Leaderboard – Total Fitness Sessions")
+
+    lb = pd.concat([sessions, duration], axis=1).fillna(0).reset_index()
+    lb["hours"] = (lb["total_minutes"] / 60).round(1)
+    lb = lb.rename(columns={col_name: "Username"})
+    lb = lb.sort_values("sessions", ascending=False).reset_index(drop=True)
+    lb.index = lb.index + 1
+    lb.insert(0, "Rank", lb.index)
+
+    st.dataframe(lb, use_container_width=True)
+
+
+# ------------------- FITNESS ACTIVITY -------------------
+with tab_activity:
+    st.subheader("📊 Muscle Group Activity by User")
+
+    # Convert to long format for plotly
+    heat_df = activity_matrix.reset_index().melt(id_vars="index")
+    heat_df.columns = ["Muscle", "User", "Count"]
+
+    fig = px.imshow(
+        activity_matrix,
+        labels=dict(x="User", y="Muscle", color="Count"),
+        color_continuous_scale="Reds",
+        aspect="auto",
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("### Raw Activity Table")
+    st.dataframe(activity_matrix, use_container_width=True)
+
+
+# ------------------- PROFILE -------------------
 with tab_profile:
     st.subheader("🧍 Member Profile")
 
-    all_users = sorted(sessions.index.tolist())
-    default_index = all_users.index("Vincent") if "Vincent" in all_users else 0
-    selected_user = st.selectbox("Select a user", all_users, index=default_index)
+    user_list = sorted(users)
+    default_user = user_list.index("Vincent") if "Vincent" in user_list else 0
+    selected = st.selectbox("Select Member", user_list, index=default_user)
 
-    st.markdown(f"### ⚔️ {selected_user}'s Profile")
-
-    user_sessions = int(sessions.get(selected_user, 0))
-    user_minutes = float(duration.get(selected_user, 0.0))
-    user_hours = round(user_minutes / 60.0, 1)
+    total_sessions = sessions[selected]
+    total_minutes = duration[selected]
+    total_hours = round(total_minutes / 60, 1)
 
     today = dt.date.today()
-    season_year = today.year
-    season_end = dt.date(season_year, SEASON_END_MONTH, SEASON_END_DAY)
+    season_end = dt.date(today.year, 12, 31)
     days_left = (season_end - today).days
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Fitness Days (Sessions)", user_sessions)
-    c2.metric("Total Hours (approx.)", user_hours)
-    c3.metric("Season Ends In", f"{max(days_left,0)} days")
+    st.markdown(f"## ⚔️ {selected}'s Stats")
 
-    # Favorite / least worked muscles
-    mus_dict = user_muscle_counts.get(selected_user, {})
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Fitness Days", total_sessions)
+    c2.metric("Total Hours", total_hours)
+    c3.metric("Season Ends In", f"{days_left} days")
+
+    # Favorite muscles
+    st.markdown("### 💪 Favorite Muscle Groups")
+    mus_dict = user_muscle_counts[selected]
     mus_series = pd.Series(mus_dict).sort_values(ascending=False)
 
-    st.markdown("#### 💪 Favorite Muscle Groups")
-    if len(mus_series) == 0:
-        st.write("No muscle data yet for this user.")
-    else:
-        fav = mus_series.head(3)
-        for m, v in fav.items():
-            st.write(f"- **{m}** – {v} sessions")
-
-    st.markdown("#### 💤 Least Worked Muscle Groups")
     if len(mus_series) > 0:
-        # muscles with the lowest non-zero counts
-        least = mus_series.sort_values(ascending=True).head(3)
-        for m, v in least.items():
-            st.write(f"- **{m}** – {v} sessions")
+        st.write(mus_series.head(3))
+    else:
+        st.write("No muscle data.")
 
-    st.markdown("---")
-    st.markdown("#### Raw Log for this User")
-    user_log = df[df[cols["name"]] == selected_user]
-    st.dataframe(
-        user_log[[cols["timestamp"], cols["muscles"], cols["duration"]]].sort_values(
-            by=cols["timestamp"], ascending=False
-        ),
-        use_container_width=True,
-        height=300
-    )
+    st.markdown("### 😴 Least Worked Groups")
+    if len(mus_series) > 0:
+        st.write(mus_series.tail(3))
 
+
+    st.markdown("### 📘 Workout Log")
+    user_df = df[df[col_name] == selected][
+        [col_timestamp, col_muscles, col_duration]
+    ].sort_values(col_timestamp, ascending=False)
+
+    st.dataframe(user_df, use_container_width=True)
