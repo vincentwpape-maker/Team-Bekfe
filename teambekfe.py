@@ -290,7 +290,23 @@ users = sorted(df[col_name].unique())
 # -------------------------------------------------------------
 #                APP FRAME + TITLE
 # -------------------------------------------------------------
-st.markdown("<div class='app-frame'>", unsafe_allow_html=True)
+st.markdown("""
+### Log Your Fitness Sessions
+<a href="https://docs.google.com/forms/d/1JqTx8Fd5la2BGv4h5s1506KZMVQUqHL2U0pNvKs0KTo/edit" target="_blank"
+   style="
+       background:#0d1b2a;
+       padding:10px 20px;
+       border-radius:8px;
+       border:1px solid #3ecbff;
+       color:#aee6ff;
+       font-size:16px;
+       text-decoration:none;
+       box-shadow:0 0 10px #23b0ff;
+   ">
+   ➤ Submit Entry
+</a>
+""", unsafe_allow_html=True)
+
 st.markdown("<div class='main-title'>Team Bekfè Fitness Tracker</div>", unsafe_allow_html=True)
 
 # Tabs in order: Profile, Leaderboards, Fitness Activity, Dashboard
