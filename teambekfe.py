@@ -4,65 +4,74 @@ import numpy as np
 import gspread
 from google.oauth2.service_account import Credentials
 
+# =============================
+# PAGE CONFIG
+# =============================
 st.set_page_config(
     page_title="Team BekFê Fitness Tracker",
     layout="wide",
 )
 
-# -----------------------------
+# =============================
 # SOLO LEVELING UI THEME
-# -----------------------------
+# =============================
 st.markdown("""
 <style>
 body {
     background-color: #0a0f1a;
 }
-header, .stTabs [role="tablist"] button {
-    font-size: 20px;
-}
 .block-container {
-    background-color: #0a0f1a;
+    background-color: #0a0f1a !important;
     padding-top: 2rem;
 }
-h1, h2, h3, h4, h5, h6, p, label {
-    font-family: 'Roboto', sans-serif;
+h1, h2, h3, h4, h5, h6, p, label, div {
     color: #e0e6f1 !important;
+    font-family: 'Roboto', sans-serif;
 }
+
+/* Stat Cards */
 .stat-card {
-    background: rgba(25, 35, 60, 0.85);
+    background: rgba(20, 30, 55, 0.85);
     padding: 25px;
-    border-radius: 12px;
+    border-radius: 15px;
     border: 1px solid #3a4a6a;
     text-align: center;
-    box-shadow: 0px 0px 12px rgba(0, 255, 255, 0.15);
+    box-shadow: 0px 0px 12px rgba(0, 255, 255, 0.25);
+    margin-bottom: 15px;
+}
+
+/* Tabs */
+.stTabs [role="tab"] {
+    padding: 10px 20px;
+    font-size: 18px;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# -----------------------------
+# =============================
 # GOOGLE SHEETS CONFIG
-# -----------------------------
-SHEET_ID = "1XQEJH-s0Z6LrutwTTSvS0cYR1e3Tiqi6VqUkGQ-S3Lg"
-SHEET_NAME = "Form_Responses1"   # ← THIS IS THE TAB YOU SHOWED IN YOUR SCREENSHOT (not "Data")
+# =============================
 
-# -----------------------------
-# LOAD GOOGLE SHEET (FIXED)
-# -----------------------------
+SHEET_ID = "1XQEJH-s0Z6LrutwTTSvS0cYR1e3Tiqi6VqUkGQ-S3Lg"
+SHEET_NAME = "Form_Responses1"  # ← YOUR ACTUAL TAB NAME
+
+# =============================
+# LOAD SHEET
+# =============================
 @st.cache_data(ttl=60)
 def load_sheet():
     scope = [
         "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
+        "https://www.googleapis.com/auth/drive",
     ]
 
     creds = Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"],
-        scopes=scope
+        st.secrets["gcp_service_account"], scopes=scope
     )
 
     client = gspread.authorize(creds)
-
     sheet = client.open_by_key(SHEET_ID).worksheet(SHEET_NAME)
+
     df = pd.DataFrame(sheet.get_all_records())
 
     # Clean names
@@ -79,21 +88,21 @@ def load_sheet():
 
 df, sheet = load_sheet()
 
-# -----------------------------
-# NAVIGATION TABS
-# -----------------------------
+# =============================
+# TABS
+# =============================
 tabs = st.tabs(["🏠 Dashboard", "🥇 Leaderboards", "🔥 Fitness Activity", "👤 Profile"])
 
-# -----------------------------
+# =============================
 # TAB 1 — DASHBOARD
-# -----------------------------
+# =============================
 with tabs[0]:
     st.markdown("<h1>🗡️ Team BekFê Fitness Tracker ⚔️</h1>", unsafe_allow_html=True)
 
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        st.markdown('<div class="stat-card"><h2>262</h2><p>Form Entries</p></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="stat-card"><h2>{len(df)}</h2><p>Form Entries</p></div>', unsafe_allow_html=True)
 
     with col2:
         active_members = df["Please list your name :"].nunique()
@@ -105,7 +114,8 @@ with tabs[0]:
     with col4:
         def convert_time(t):
             try:
-                t = str(t).lower().replace("mins", "min").replace("hrs", "hour")
+                t = str(t).lower()
+                t = t.replace("mins", "min").replace("hrs", "hour")
                 if "hour" in t:
                     h = float(t.split("hour")[0].strip())
                     return h * 60
@@ -123,9 +133,9 @@ with tabs[0]:
     st.markdown("### 🔥 Recent Activity")
     st.dataframe(df.tail(20), use_container_width=True)
 
-# -----------------------------
-# TAB 2 — LEADERBOARDS
-# -----------------------------
+# =============================
+# TAB 2 — LEADERBOARD
+# =============================
 with tabs[1]:
     st.header("🥇 Weekly Leaderboards")
 
@@ -138,9 +148,9 @@ with tabs[1]:
 
     st.dataframe(leaderboard, use_container_width=True)
 
-# -----------------------------
-# TAB 3 — FITNESS ACTIVITY
-# -----------------------------
+# =============================
+# TAB 3 — WORKOUT BREAKDOWN
+# =============================
 with tabs[2]:
     st.header("🔥 Workout Breakdown")
 
@@ -155,9 +165,9 @@ with tabs[2]:
 
     st.bar_chart(activity_counts)
 
-# -----------------------------
-# TAB 4 — PROFILE + ADD ENTRY
-# -----------------------------
+# =============================
+# TAB 4 — ADD ENTRY FORM
+# =============================
 with tabs[3]:
     st.header("👤 Submit New Workout Entry")
 
@@ -165,13 +175,15 @@ with tabs[3]:
         name = st.text_input("Name")
         duration = st.text_input("Workout Duration (e.g., 30 mins)")
         muscle_groups = st.text_area("Muscle Groups Worked")
-
         submitted = st.form_submit_button("Submit Entry")
 
         if submitted:
-            new_row = [pd.Timestamp.now(), name, "Yes", muscle_groups, duration]
+            new_row = [
+                str(pd.Timestamp.now()),
+                name,
+                "Yes",
+                muscle_groups,
+                duration,
+            ]
             sheet.append_row(new_row)
-            st.success("Entry added successfully! Refresh to see it.")
-
-
-
+            st.success("Entry added! Refresh to see it.")
