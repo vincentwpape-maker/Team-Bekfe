@@ -206,50 +206,100 @@ df["date"] = df[col_timestamp].dt.date
 sessions_per_day = df.groupby("date").size().reset_index(name="sessions")
 sessions_per_day["7day_avg"] = sessions_per_day["sessions"].rolling(7, min_periods=1).mean()
 
-mus_df = pd.DataFrame({"Muscle": list(overall_muscles.keys()), "Count": list(overall_muscles.values())})
-hours_df = pd.DataFrame({"User": duration.index, "Hours": (duration / 60).round(1)}).sort_values("Hours", ascending=False)
+mus_df = pd.DataFrame(
+    {"Muscle": list(overall_muscles.keys()), "Count": list(overall_muscles.values())}
+)
+hours_df = pd.DataFrame(
+    {"User": duration.index, "Hours": (duration / 60).round(1)}
+).sort_values("Hours", ascending=False)
 activity_matrix = pd.DataFrame(user_muscles).fillna(0).astype(int).T
 users = sorted(df[col_name].unique())
 
 # -------------------------------------------------------------
-#                PRESTIGE RANK SYSTEM
+#                CONSISTENCY RANK SYSTEM (S–E RANK ATHLETE)
 # -------------------------------------------------------------
-def get_prestige(s):
-    if s >= 301:
-        return "Mythic"
-    elif s >= 251:
-        return "Diamond"
-    elif s >= 181:
-        return "Platinum"
-    elif s >= 101:
-        return "Gold"
-    elif s >= 51:
-        return "Silver"
+# Realistic thresholds based on sessions in a 365-day season
+def get_rank_letter(sessions_count: int) -> str:
+    if sessions_count >= 250:
+        return "S"
+    elif sessions_count >= 180:
+        return "A"
+    elif sessions_count >= 120:
+        return "B"
+    elif sessions_count >= 60:
+        return "C"
+    elif sessions_count >= 30:
+        return "D"
     else:
-        return "Bronze"
+        return "E"
 
-# Use 💎 and 👑 as core icons, with colors per rank
-PRESTIGE_CONFIG = {
-    "Mythic":   {"color": "#c084fc", "badge": "👑"},
-    "Diamond":  {"color": "#60a5fa", "badge": "💎"},
-    "Platinum": {"color": "#e5e7eb", "badge": "💎"},
-    "Gold":     {"color": "#facc15", "badge": "👑"},
-    "Silver":   {"color": "#e5e7eb", "badge": "💎"},
-    "Bronze":   {"color": "#f97316", "badge": "👑"},
+RANK_CONFIG = {
+    "S": {
+        "label": "S-Rank Athlete",
+        "color": "#e9d5ff",  # light purple
+        "emoji": "👑",
+    },
+    "A": {
+        "label": "A-Rank Athlete",
+        "color": "#93c5fd",  # blue
+        "emoji": "💎",
+    },
+    "B": {
+        "label": "B-Rank Athlete",
+        "color": "#6ee7b7",  # green
+        "emoji": "💎",
+    },
+    "C": {
+        "label": "C-Rank Athlete",
+        "color": "#fde68a",  # yellow
+        "emoji": "💎",
+    },
+    "D": {
+        "label": "D-Rank Athlete",
+        "color": "#fed7aa",  # orange
+        "emoji": "💎",
+    },
+    "E": {
+        "label": "E-Rank Athlete",
+        "color": "#9ca3af",  # grey
+        "emoji": "💎",
+    },
 }
 
-def render_prestige_badge(prestige: str) -> str:
-    cfg = PRESTIGE_CONFIG.get(prestige, {"color": "#9ca3af", "badge": "💎"})
+def render_rank_badge(rank_letter: str, consistency: float | None = None) -> str:
+    cfg = RANK_CONFIG.get(rank_letter, RANK_CONFIG["E"])
+    label = cfg["label"]
     color = cfg["color"]
-    badge = cfg["badge"]
-    return f"<span style='color:{color}; font-weight:800;'>{badge} {prestige}</span>"
+    emoji = cfg["emoji"]
+    if consistency is not None:
+        return (
+            f"<span style='color:{color}; font-weight:800;'>"
+            f"{emoji} {label} • {consistency:.1f}%"
+            f"</span>"
+        )
+    else:
+        return (
+            f"<span style='color:{color}; font-weight:800;'>"
+            f"{emoji} {label}"
+            f"</span>"
+        )
 
-prestige_map = {user: get_prestige(int(sessions.get(user, 0))) for user in sessions.index}
+# Maps for each user
+consistency_map = {}
+rank_map = {}
 
-# User with the highest number of sessions (featured)
+for user in sessions.index:
+    s_count = int(sessions.get(user, 0))
+    consistency_pct = (s_count / 365) * 100
+    consistency_map[user] = round(consistency_pct, 1)
+    rank_letter = get_rank_letter(s_count)
+    rank_map[user] = rank_letter
+
+# Featured athlete = most sessions
 top_user = sessions.idxmax()
 top_user_sessions = int(sessions[top_user])
-top_user_prestige = prestige_map.get(top_user, "Bronze")
+top_user_consistency = consistency_map.get(top_user, 0.0)
+top_user_rank_letter = rank_map.get(top_user, "E")
 
 # -------------------------------------------------------------
 #                TOP BUTTON (GOOGLE FORM)
@@ -276,8 +326,8 @@ st.markdown("<div class='main-title'>Team Bekfè Fitness Tracker</div>", unsafe_
 # -------------------------------------------------------------
 #                TAB ORDER
 # -------------------------------------------------------------
-tab_profile, tab_lb, tab_activity, tab_dash = st.tabs(
-    ["Profile", "Leaderboards", "Fitness Activity", "Dashboard"]
+tab_profile, tab_lb, tab_activity, tab_dash, tab_ranks = st.tabs(
+    ["Profile", "Leaderboards", "Fitness Activity", "Dashboard", "Ranking System"]
 )
 
 # =============================================================
@@ -286,15 +336,15 @@ tab_profile, tab_lb, tab_activity, tab_dash = st.tabs(
 with tab_profile:
     st.markdown("<div class='glow-header'>Profile</div>", unsafe_allow_html=True)
 
-    # Featured top user banner
-    featured_badge_html = render_prestige_badge(top_user_prestige)
+    # Featured Athlete banner (highest sessions)
+    featured_badge_html = render_rank_badge(top_user_rank_letter, top_user_consistency)
     st.markdown(
         f"<div class='featured-line'>🏆 Featured Athlete: <b>{top_user}</b> – "
         f"{featured_badge_html} – <b>{top_user_sessions}</b> sessions</div>",
         unsafe_allow_html=True
     )
 
-    # Default selection = top user (highest sessions), but user can change
+    # Default selection = top user
     selected = st.selectbox(
         "Select Member",
         users,
@@ -304,8 +354,9 @@ with tab_profile:
     total_sessions_user = int(sessions.get(selected, 0))
     total_minutes_user = int(duration.get(selected, 0))
     total_hours_user = round(total_minutes_user / 60, 1)
-    prestige_user = prestige_map.get(selected, "Bronze")
-    prestige_badge_html = render_prestige_badge(prestige_user)
+    consistency_user = consistency_map.get(selected, 0.0)
+    rank_letter_user = rank_map.get(selected, "E")
+    rank_badge_html = render_rank_badge(rank_letter_user, consistency_user)
 
     today = dt.date.today()
     season_year = today.year
@@ -319,13 +370,15 @@ with tab_profile:
         unsafe_allow_html=True
     )
 
-    # Name + Prestige in header
+    # Name + Rank in header
     st.markdown(
-        f"<div class='sub-header'>{selected} – {prestige_badge_html}</div>",
+        f"<div class='sub-header'>{selected} – {rank_badge_html}</div>",
         unsafe_allow_html=True
     )
 
-    c1, c2, c3 = st.columns(3)
+    # --- STAT BOXES ------------------------------------------
+    c1, c2, c3, c4 = st.columns(4)
+
     c1.markdown(
         f"<div class='stat-box'>"
         f"<div class='stat-value'>{total_sessions_user}</div>"
@@ -347,6 +400,13 @@ with tab_profile:
         f"</div>",
         unsafe_allow_html=True
     )
+    c4.markdown(
+        f"<div class='stat-box'>"
+        f"<div class='stat-value'>{consistency_user:.1f}%</div>"
+        f"<div class='stat-label'>Season Consistency</div>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
 
     st.markdown("<div class='sub-header'>💪 Top Muscles Used</div>", unsafe_allow_html=True)
     mus_series = pd.Series(user_muscles[selected]).sort_values(ascending=False)
@@ -354,7 +414,11 @@ with tab_profile:
 
     st.markdown("<div class='sub-header'>📘 Workout Log</div>", unsafe_allow_html=True)
     log = df[df[col_name] == selected][[col_timestamp, col_muscles, col_duration]]
-    st.dataframe(log.sort_values(col_timestamp, ascending=False), use_container_width=True, hide_index=True)
+    st.dataframe(
+        log.sort_values(col_timestamp, ascending=False),
+        use_container_width=True,
+        hide_index=True
+    )
 
 # =============================================================
 #                      LEADERBOARD TAB
@@ -368,18 +432,19 @@ with tab_lb:
         "Total Minutes": duration.values,
     })
     lb["Hours"] = (lb["Total Minutes"] / 60).round(1)
-    lb["Prestige"] = [prestige_map[u] for u in lb["User"]]
-    lb["Badge"] = [PRESTIGE_CONFIG[p]["badge"] for p in lb["Prestige"]]
+    lb["Consistency %"] = [consistency_map[u] for u in lb["User"]]
+    lb["Rank Letter"] = [rank_map[u] for u in lb["User"]]
+    lb["Rank Title"] = [RANK_CONFIG[r]["label"] for r in lb["Rank Letter"]]
+    lb["Icon"] = [RANK_CONFIG[r]["emoji"] for r in lb["Rank Letter"]]
 
     # Sort by Sessions (highest first)
     lb = lb.sort_values("Sessions", ascending=False).reset_index(drop=True)
     lb.index = lb.index + 1
-    lb.insert(0, "Rank", lb.index)
+    lb.insert(0, "Position", lb.index)
 
-    # Reorder columns for display
-    lb = lb[["Rank", "User", "Badge", "Prestige", "Sessions", "Hours"]]
+    lb_display = lb[["Position", "User", "Icon", "Rank Title", "Consistency %", "Sessions", "Hours"]]
 
-    st.dataframe(lb, hide_index=True, use_container_width=True)
+    st.dataframe(lb_display, hide_index=True, use_container_width=True)
 
 # =============================================================
 #                  FITNESS ACTIVITY TAB
@@ -388,19 +453,34 @@ with tab_activity:
     st.markdown("<div class='glow-header'>Fitness Activity</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='sub-header'>🔥 Most Trained Muscle Groups</div>", unsafe_allow_html=True)
-    st.plotly_chart(px.bar(mus_df.sort_values("Count", ascending=False), x="Muscle", y="Count"), use_container_width=True)
+    st.plotly_chart(
+        px.bar(mus_df.sort_values("Count", ascending=False), x="Muscle", y="Count"),
+        use_container_width=True
+    )
 
     st.markdown("<div class='sub-header'>⏳ Total Hours per Member</div>", unsafe_allow_html=True)
-    st.plotly_chart(px.bar(hours_df, x="User", y="Hours"), use_container_width=True)
+    st.plotly_chart(
+        px.bar(hours_df, x="User", y="Hours"),
+        use_container_width=True
+    )
 
     st.markdown("<div class='sub-header'>💪 Muscle Distribution</div>", unsafe_allow_html=True)
-    st.plotly_chart(px.pie(mus_df, names="Muscle", values="Count", hole=0.45), use_container_width=True)
+    st.plotly_chart(
+        px.pie(mus_df, names="Muscle", values="Count", hole=0.45),
+        use_container_width=True
+    )
 
     st.markdown("<div class='sub-header'>📅 Training Frequency (7-Day Avg)</div>", unsafe_allow_html=True)
-    st.plotly_chart(px.line(sessions_per_day, x="date", y="7day_avg"), use_container_width=True)
+    st.plotly_chart(
+        px.line(sessions_per_day, x="date", y="7day_avg"),
+        use_container_width=True
+    )
 
     st.markdown("<div class='sub-header'>📈 Sessions Over Time</div>", unsafe_allow_html=True)
-    st.plotly_chart(px.line(sessions_per_day, x="date", y="sessions"), use_container_width=True)
+    st.plotly_chart(
+        px.line(sessions_per_day, x="date", y="sessions"),
+        use_container_width=True
+    )
 
     st.markdown("<div class='sub-header'>📊 User × Muscle Frequency Table</div>", unsafe_allow_html=True)
     st.dataframe(activity_matrix, use_container_width=True)
@@ -442,4 +522,30 @@ with tab_dash:
     )
 
     st.markdown("<div class='sub-header'>🔥 Recent Activity</div>", unsafe_allow_html=True)
-    st.dataframe(df.sort_values(col_timestamp, ascending=False).head(25), use_container_width=True, hide_index=True)
+    st.dataframe(
+        df.sort_values(col_timestamp, ascending=False).head(25),
+        use_container_width=True,
+        hide_index=True
+    )
+
+# =============================================================
+#                      RANKING SYSTEM TAB
+# =============================================================
+with tab_ranks:
+    st.markdown("<div class='glow-header'>Ranking System</div>", unsafe_allow_html=True)
+    st.markdown(
+        "Season = 365 days. Ranks are based on how many sessions you log in the season.",
+        unsafe_allow_html=True,
+    )
+
+    rank_table = pd.DataFrame([
+        {"Rank": "S-Rank Athlete", "Letter": "S", "Sessions Range": "250 – 365", "Approx Consistency": "68% – 100%"},
+        {"Rank": "A-Rank Athlete", "Letter": "A", "Sessions Range": "180 – 249", "Approx Consistency": "49% – 68%"},
+        {"Rank": "B-Rank Athlete", "Letter": "B", "Sessions Range": "120 – 179", "Approx Consistency": "33% – 49%"},
+        {"Rank": "C-Rank Athlete", "Letter": "C", "Sessions Range": "60 – 119",  "Approx Consistency": "16% – 33%"},
+        {"Rank": "D-Rank Athlete", "Letter": "D", "Sessions Range": "30 – 59",   "Approx Consistency": "8% – 16%"},
+        {"Rank": "E-Rank Athlete", "Letter": "E", "Sessions Range": "0 – 29",    "Approx Consistency": "0% – 8%"},
+    ])
+
+    st.markdown("<div class='sub-header'>📜 Tier Breakdown</div>", unsafe_allow_html=True)
+    st.dataframe(rank_table, use_container_width=True, hide_index=True)
