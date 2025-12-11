@@ -411,64 +411,65 @@ with tab_ranks:
 
     st.markdown(
         """
-        Your fitness rank is based on the total number of workout sessions completed during the 365-day fitness season.  
+        Your fitness rank is based on the total number of workout sessions 
+        completed during the 365-day fitness season.  
         Higher consistency across the year results in a higher rank.
         """,
         unsafe_allow_html=True
     )
 
-    ranking_table_html = """
-    <table class="rank-table">
-        <tr>
-            <th>Rank</th>
-            <th>Letter</th>
-            <th>Sessions Range</th>
-            <th>Consistency %</th>
-        </tr>
+    st.markdown(
+        """
+        <table class="rank-table">
+            <tr>
+                <th>Rank</th>
+                <th>Letter</th>
+                <th>Sessions Range</th>
+                <th>Consistency %</th>
+            </tr>
 
-        <tr class="s-rank">
-            <td>S-Rank Athlete</td>
-            <td>S</td>
-            <td>250 – 365</td>
-            <td>68% – 100%</td>
-        </tr>
+            <tr class="s-rank">
+                <td>S-Rank Athlete</td>
+                <td>S</td>
+                <td>250 – 365</td>
+                <td>68% – 100%</td>
+            </tr>
 
-        <tr class="a-rank">
-            <td>A-Rank Athlete</td>
-            <td>A</td>
-            <td>180 – 249</td>
-            <td>49% – 68%</td>
-        </tr>
+            <tr class="a-rank">
+                <td>A-Rank Athlete</td>
+                <td>A</td>
+                <td>180 – 249</td>
+                <td>49% – 68%</td>
+            </tr>
 
-        <tr class="b-rank">
-            <td>B-Rank Athlete</td>
-            <td>B</td>
-            <td>120 – 179</td>
-            <td>33% – 49%</td>
-        </tr>
+            <tr class="b-rank">
+                <td>B-Rank Athlete</td>
+                <td>B</td>
+                <td>120 – 179</td>
+                <td>33% – 49%</td>
+            </tr>
 
-        <tr class="c-rank">
-            <td>C-Rank Athlete</td>
-            <td>C</td>
-            <td>60 – 119</td>
-            <td>16% – 33%</td>
-        </tr>
+            <tr class="c-rank">
+                <td>C-Rank Athlete</td>
+                <td>C</td>
+                <td>60 – 119</td>
+                <td>16% – 33%</td>
+            </tr>
 
-        <tr class="d-rank">
-            <td>D-Rank Athlete</td>
-            <td>D</td>
-            <td>30 – 59</td>
-            <td>8% – 16%</td>
-        </tr>
+            <tr class="d-rank">
+                <td>D-Rank Athlete</td>
+                <td>D</td>
+                <td>30 – 59</td>
+                <td>8% – 16%</td>
+            </tr>
 
-        <tr class="e-rank">
-            <td>E-Rank Athlete</td>
-            <td>E</td>
-            <td>0 – 29</td>
-            <td>0% – 8%</td>
-        </tr>
-    </table>
-    """
-
-    st.markdown(ranking_table_html, unsafe_allow_html=True)
-
+            <tr class="e-rank">
+                <td>E-Rank Athlete</td>
+                <td>E</td>
+                <td>0 – 29</td>
+                <td>0% – 8%</td>
+            </tr>
+        </table>
+        """,
+        unsafe_allow_html=True
+    )
