@@ -411,8 +411,8 @@ with tab_ranks:
 
     st.markdown(
         """
-        Your fitness rank is based on the total number of workout sessions completed during the 365-day fitness season.
-        Higher consistency across the year results in a higher rank.
+Your fitness rank is based on the total number of workout sessions completed during the 365-day fitness season.  
+Higher consistency across the year results in a higher rank.
         """,
         unsafe_allow_html=True
     )
@@ -434,12 +434,12 @@ with tab_ranks:
 }
 
 /* Auras */
-.s-rank { background: linear-gradient(90deg, #5b21b6, #facc15); color: white; font-weight: 900; }
-.a-rank { background: rgba(59,130,246,0.55); color: white; font-weight: 800; }
-.b-rank { background: rgba(16,185,129,0.55); color: white; font-weight: 800; }
-.c-rank { background: rgba(234,179,8,0.55); color: black; font-weight: 700; }
-.d-rank { background: rgba(249,115,22,0.55); color: black; font-weight: 700; }
-.e-rank { background: rgba(156,163,175,0.45); color: white; font-weight: 700; }
+.s-rank { background: linear-gradient(90deg,#5b21b6,#facc15); color:white; font-weight:900; }
+.a-rank { background: rgba(59,130,246,0.55); color:white; font-weight:800; }
+.b-rank { background: rgba(16,185,129,0.55); color:white; font-weight:800; }
+.c-rank { background: rgba(234,179,8,0.55); color:black; font-weight:700; }
+.d-rank { background: rgba(249,115,22,0.55); color:black; font-weight:700; }
+.e-rank { background: rgba(156,163,175,0.45); color:white; font-weight:700; }
 </style>
 
 <table class="rank-table">
@@ -492,6 +492,6 @@ with tab_ranks:
         <td>0% – 8%</td>
     </tr>
 </table>
-""",
+        """,
         unsafe_allow_html=True
     )
