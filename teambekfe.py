@@ -532,20 +532,113 @@ with tab_dash:
 #                      RANKING SYSTEM TAB
 # =============================================================
 with tab_ranks:
-    st.markdown("<div class='glow-header'>Ranking System</div>", unsafe_allow_html=True)
-    st.markdown(
-        "Season = 365 days. Ranks are based on how many sessions you log in the season.",
-        unsafe_allow_html=True,
-    )
+   st.markdown("""
+<style>
+.rank-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
 
-    rank_table = pd.DataFrame([
-        {"Rank": "S-Rank Athlete", "Letter": "S", "Sessions Range": "250 – 365", "Approx Consistency": "68% – 100%"},
-        {"Rank": "A-Rank Athlete", "Letter": "A", "Sessions Range": "180 – 249", "Approx Consistency": "49% – 68%"},
-        {"Rank": "B-Rank Athlete", "Letter": "B", "Sessions Range": "120 – 179", "Approx Consistency": "33% – 49%"},
-        {"Rank": "C-Rank Athlete", "Letter": "C", "Sessions Range": "60 – 119",  "Approx Consistency": "16% – 33%"},
-        {"Rank": "D-Rank Athlete", "Letter": "D", "Sessions Range": "30 – 59",   "Approx Consistency": "8% – 16%"},
-        {"Rank": "E-Rank Athlete", "Letter": "E", "Sessions Range": "0 – 29",    "Approx Consistency": "0% – 8%"},
-    ])
+.rank-table th, .rank-table td {
+    padding: 10px;
+    text-align: center;
+    font-size: 16px;
+    border: 1px solid #1e293b;
+}
 
-    st.markdown("<div class='sub-header'>📜 Tier Breakdown</div>", unsafe_allow_html=True)
-    st.dataframe(rank_table, use_container_width=True, hide_index=True)
+/* S Rank – Purple + Gold */
+.s-rank {
+    background: linear-gradient(90deg, #5b21b6, #facc15);
+    color: white;
+    font-weight: 900;
+}
+
+/* A Rank – Blue */
+.a-rank {
+    background: rgba(59, 130, 246, 0.55);
+    color: white;
+    font-weight: 800;
+}
+
+/* B Rank – Green */
+.b-rank {
+    background: rgba(16, 185, 129, 0.55);
+    color: white;
+    font-weight: 800;
+}
+
+/* C Rank – Yellow */
+.c-rank {
+    background: rgba(234, 179, 8, 0.55);
+    color: black;
+    font-weight: 700;
+}
+
+/* D Rank – Orange */
+.d-rank {
+    background: rgba(249, 115, 22, 0.55);
+    color: black;
+    font-weight: 700;
+}
+
+/* E Rank – Grey */
+.e-rank {
+    background: rgba(156, 163, 175, 0.45);
+    color: white;
+    font-weight: 700;
+}
+</style>
+
+
+<table class="rank-table">
+    <tr>
+        <th>Rank</th>
+        <th>Letter</th>
+        <th>Sessions Range</th>
+        <th>Consistency %</th>
+    </tr>
+
+    <tr class="s-rank">
+        <td>S-Rank Athlete</td>
+        <td>S</td>
+        <td>250 – 365</td>
+        <td>68% – 100%</td>
+    </tr>
+
+    <tr class="a-rank">
+        <td>A-Rank Athlete</td>
+        <td>A</td>
+        <td>180 – 249</td>
+        <td>49% – 68%</td>
+    </tr>
+
+    <tr class="b-rank">
+        <td>B-Rank Athlete</td>
+        <td>B</td>
+        <td>120 – 179</td>
+        <td>33% – 49%</td>
+    </tr>
+
+    <tr class="c-rank">
+        <td>C-Rank Athlete</td>
+        <td>C</td>
+        <td>60 – 119</td>
+        <td>16% – 33%</td>
+    </tr>
+
+    <tr class="d-rank">
+        <td>D-Rank Athlete</td>
+        <td>D</td>
+        <td>30 – 59</td>
+        <td>8% – 16%</td>
+    </tr>
+
+    <tr class="e-rank">
+        <td>E-Rank Athlete</td>
+        <td>E</td>
+        <td>0 – 29</td>
+        <td>0% – 8%</td>
+    </tr>
+</table>
+""", unsafe_allow_html=True)
