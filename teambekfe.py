@@ -411,8 +411,7 @@ with tab_ranks:
 
     st.markdown(
         """
-        Your fitness rank is based on the total number of workout sessions 
-        completed during the 365-day fitness season.  
+        Your fitness rank is based on the total number of workout sessions completed during the 365-day fitness season.
         Higher consistency across the year results in a higher rank.
         """,
         unsafe_allow_html=True
@@ -420,56 +419,79 @@ with tab_ranks:
 
     st.markdown(
         """
-        <table class="rank-table">
-            <tr>
-                <th>Rank</th>
-                <th>Letter</th>
-                <th>Sessions Range</th>
-                <th>Consistency %</th>
-            </tr>
+<style>
+.rank-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+}
 
-            <tr class="s-rank">
-                <td>S-Rank Athlete</td>
-                <td>S</td>
-                <td>250 – 365</td>
-                <td>68% – 100%</td>
-            </tr>
+.rank-table th, .rank-table td {
+    padding: 12px;
+    text-align: center;
+    font-size: 16px;
+    border: 1px solid #1e293b;
+}
 
-            <tr class="a-rank">
-                <td>A-Rank Athlete</td>
-                <td>A</td>
-                <td>180 – 249</td>
-                <td>49% – 68%</td>
-            </tr>
+/* Auras */
+.s-rank { background: linear-gradient(90deg, #5b21b6, #facc15); color: white; font-weight: 900; }
+.a-rank { background: rgba(59,130,246,0.55); color: white; font-weight: 800; }
+.b-rank { background: rgba(16,185,129,0.55); color: white; font-weight: 800; }
+.c-rank { background: rgba(234,179,8,0.55); color: black; font-weight: 700; }
+.d-rank { background: rgba(249,115,22,0.55); color: black; font-weight: 700; }
+.e-rank { background: rgba(156,163,175,0.45); color: white; font-weight: 700; }
+</style>
 
-            <tr class="b-rank">
-                <td>B-Rank Athlete</td>
-                <td>B</td>
-                <td>120 – 179</td>
-                <td>33% – 49%</td>
-            </tr>
+<table class="rank-table">
+    <tr>
+        <th>Rank</th>
+        <th>Letter</th>
+        <th>Sessions Range</th>
+        <th>Consistency %</th>
+    </tr>
 
-            <tr class="c-rank">
-                <td>C-Rank Athlete</td>
-                <td>C</td>
-                <td>60 – 119</td>
-                <td>16% – 33%</td>
-            </tr>
+    <tr class="s-rank">
+        <td>S-Rank Athlete</td>
+        <td>S</td>
+        <td>250 – 365</td>
+        <td>68% – 100%</td>
+    </tr>
 
-            <tr class="d-rank">
-                <td>D-Rank Athlete</td>
-                <td>D</td>
-                <td>30 – 59</td>
-                <td>8% – 16%</td>
-            </tr>
+    <tr class="a-rank">
+        <td>A-Rank Athlete</td>
+        <td>A</td>
+        <td>180 – 249</td>
+        <td>49% – 68%</td>
+    </tr>
 
-            <tr class="e-rank">
-                <td>E-Rank Athlete</td>
-                <td>E</td>
-                <td>0 – 29</td>
-                <td>0% – 8%</td>
-            </tr>
-        </table>
-        """,
+    <tr class="b-rank">
+        <td>B-Rank Athlete</td>
+        <td>B</td>
+        <td>120 – 179</td>
+        <td>33% – 49%</td>
+    </tr>
+
+    <tr class="c-rank">
+        <td>C-Rank Athlete</td>
+        <td>C</td>
+        <td>60 – 119</td>
+        <td>16% – 33%</td>
+    </tr>
+
+    <tr class="d-rank">
+        <td>D-Rank Athlete</td>
+        <td>D</td>
+        <td>30 – 59</td>
+        <td>8% – 16%</td>
+    </tr>
+
+    <tr class="e-rank">
+        <td>E-Rank Athlete</td>
+        <td>E</td>
+        <td>0 – 29</td>
+        <td>0% – 8%</td>
+    </tr>
+</table>
+""",
         unsafe_allow_html=True
     )
