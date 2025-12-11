@@ -471,5 +471,4 @@ with tab_ranks:
             </tr>
         </table>
         """,
-        unsafe_allow_html=True
-    )
+        unsafe_allow_html=True)
