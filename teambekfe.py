@@ -15,7 +15,7 @@ st.set_page_config(
 )
 
 # -------------------------------------------------------------
-#                SOLO-LEVELING THEME CSS
+#        SOLO-LEVELING THEME CSS + AURA TABLE STYLES
 # -------------------------------------------------------------
 st.markdown(
     """
@@ -106,6 +106,46 @@ st.markdown(
     .js-plotly-plot .plotly {
         background: transparent !important;
     }
+
+    /* --- Tier Breakdown Table Styling --- */
+
+    .rank-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+    }
+    .rank-table th, .rank-table td {
+        padding: 10px;
+        text-align: center;
+        font-size: 16px;
+        border: 1px solid #1e293b;
+    }
+
+    .s-rank {
+        background: linear-gradient(90deg, #5b21b6, #facc15);
+        color: white;
+        font-weight: 900;
+    }
+    .a-rank {
+        background: rgba(59,130,246,0.55);
+        color: white;
+    }
+    .b-rank {
+        background: rgba(16,185,129,0.55);
+        color: white;
+    }
+    .c-rank {
+        background: rgba(234,179,8,0.55);
+        color: black;
+    }
+    .d-rank {
+        background: rgba(249,115,22,0.55);
+        color: black;
+    }
+    .e-rank {
+        background: rgba(156,163,175,0.45);
+        color: white;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -128,7 +168,9 @@ def load_data():
 
 df = load_data()
 
-# Column IDs
+# -------------------------------------------------------------
+#                CLEAN + PREP DATA
+# -------------------------------------------------------------
 col_timestamp = df.columns[0]
 col_name      = df.columns[1]
 col_muscles   = df.columns[3]
@@ -136,9 +178,6 @@ col_duration  = df.columns[4]
 
 df[col_timestamp] = pd.to_datetime(df[col_timestamp], errors="coerce")
 
-# -------------------------------------------------------------
-#                CLEAN USER NAMES
-# -------------------------------------------------------------
 def clean_name(name):
     if not isinstance(name, str):
         return ""
@@ -153,17 +192,15 @@ def clean_name(name):
 
 df[col_name] = df[col_name].apply(clean_name)
 
-# -------------------------------------------------------------
-#                PARSE DURATION (MINUTES)
-# -------------------------------------------------------------
 def parse_duration(text):
     if not isinstance(text, str):
         return 0
     s = text.lower()
 
     hours = minutes = 0
-    h = re.search(r"(\d+)\s*(hour|hours|hr|hrs|h)\b", s)
-    m = re.search(r"(\d+)\s*(minute|minutes|min|mins|m)\b", s)
+    h = re.search(r"(\d+)\s*(hour|hr|h)\b", s)
+    m = re.search(r"(\d+)\s*(min|minute|m)\b", s)
+
     if h:
         hours = int(h.group(1))
     if m:
@@ -177,7 +214,7 @@ def parse_duration(text):
             hours = int(nums[0])
             minutes = int(nums[1])
 
-    return max(hours * 60 + minutes, 0)
+    return hours * 60 + minutes
 
 df["minutes"] = df[col_duration].apply(parse_duration)
 
@@ -206,19 +243,19 @@ df["date"] = df[col_timestamp].dt.date
 sessions_per_day = df.groupby("date").size().reset_index(name="sessions")
 sessions_per_day["7day_avg"] = sessions_per_day["sessions"].rolling(7, min_periods=1).mean()
 
-mus_df = pd.DataFrame(
-    {"Muscle": list(overall_muscles.keys()), "Count": list(overall_muscles.values())}
-)
-hours_df = pd.DataFrame(
-    {"User": duration.index, "Hours": (duration / 60).round(1)}
-).sort_values("Hours", ascending=False)
+mus_df = pd.DataFrame({"Muscle": list(overall_muscles.keys()),
+                       "Count": list(overall_muscles.values())})
+
+hours_df = pd.DataFrame({"User": duration.index,
+                         "Hours": (duration / 60).round(1)}
+                       ).sort_values("Hours", ascending=False)
+
 activity_matrix = pd.DataFrame(user_muscles).fillna(0).astype(int).T
 users = sorted(df[col_name].unique())
 
 # -------------------------------------------------------------
-#                CONSISTENCY RANK SYSTEM (S–E RANK ATHLETE)
+#                CONSISTENCY RANK SYSTEM
 # -------------------------------------------------------------
-# Realistic thresholds based on sessions in a 365-day season
 def get_rank_letter(sessions_count: int) -> str:
     if sessions_count >= 250:
         return "S"
@@ -234,75 +271,32 @@ def get_rank_letter(sessions_count: int) -> str:
         return "E"
 
 RANK_CONFIG = {
-    "S": {
-        "label": "S-Rank Athlete",
-        "color": "#e9d5ff",  # light purple
-        "emoji": "👑",
-    },
-    "A": {
-        "label": "A-Rank Athlete",
-        "color": "#93c5fd",  # blue
-        "emoji": "💎",
-    },
-    "B": {
-        "label": "B-Rank Athlete",
-        "color": "#6ee7b7",  # green
-        "emoji": "💎",
-    },
-    "C": {
-        "label": "C-Rank Athlete",
-        "color": "#fde68a",  # yellow
-        "emoji": "💎",
-    },
-    "D": {
-        "label": "D-Rank Athlete",
-        "color": "#fed7aa",  # orange
-        "emoji": "💎",
-    },
-    "E": {
-        "label": "E-Rank Athlete",
-        "color": "#9ca3af",  # grey
-        "emoji": "💎",
-    },
+    "S": {"label": "S-Rank Athlete", "color": "#e9d5ff", "emoji": "👑"},
+    "A": {"label": "A-Rank Athlete", "color": "#93c5fd", "emoji": "💎"},
+    "B": {"label": "B-Rank Athlete", "color": "#6ee7b7", "emoji": "💎"},
+    "C": {"label": "C-Rank Athlete", "color": "#fde68a", "emoji": "💎"},
+    "D": {"label": "D-Rank Athlete", "color": "#fed7aa", "emoji": "💎"},
+    "E": {"label": "E-Rank Athlete", "color": "#9ca3af", "emoji": "💎"},
 }
 
-def render_rank_badge(rank_letter: str, consistency: float | None = None) -> str:
-    cfg = RANK_CONFIG.get(rank_letter, RANK_CONFIG["E"])
-    label = cfg["label"]
-    color = cfg["color"]
-    emoji = cfg["emoji"]
-    if consistency is not None:
-        return (
-            f"<span style='color:{color}; font-weight:800;'>"
-            f"{emoji} {label} • {consistency:.1f}%"
-            f"</span>"
-        )
-    else:
-        return (
-            f"<span style='color:{color}; font-weight:800;'>"
-            f"{emoji} {label}"
-            f"</span>"
-        )
+def render_rank_badge(rank_letter: str) -> str:
+    cfg = RANK_CONFIG[rank_letter]
+    return f"<span style='color:{cfg['color']}; font-weight:800;'>{cfg['emoji']} {cfg['label']}</span>"
 
-# Maps for each user
 consistency_map = {}
 rank_map = {}
 
 for user in sessions.index:
-    s_count = int(sessions.get(user, 0))
-    consistency_pct = (s_count / 365) * 100
-    consistency_map[user] = round(consistency_pct, 1)
-    rank_letter = get_rank_letter(s_count)
-    rank_map[user] = rank_letter
+    s_count = int(sessions[user])
+    consistency_map[user] = round((s_count / 365) * 100, 1)
+    rank_map[user] = get_rank_letter(s_count)
 
-# Featured athlete = most sessions
 top_user = sessions.idxmax()
 top_user_sessions = int(sessions[top_user])
-top_user_consistency = consistency_map.get(top_user, 0.0)
-top_user_rank_letter = rank_map.get(top_user, "E")
+top_user_rank_letter = rank_map[top_user]
 
 # -------------------------------------------------------------
-#                TOP BUTTON (GOOGLE FORM)
+#                TOP BUTTON
 # -------------------------------------------------------------
 st.markdown("""
 ### Log Your Fitness Sessions
@@ -324,39 +318,37 @@ st.markdown("""
 st.markdown("<div class='main-title'>Team Bekfè Fitness Tracker</div>", unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-#                TAB ORDER
+#                TABS
 # -------------------------------------------------------------
 tab_profile, tab_lb, tab_activity, tab_dash, tab_ranks = st.tabs(
     ["Profile", "Leaderboards", "Fitness Activity", "Dashboard", "Ranking System"]
 )
 
-# =============================================================
+# -------------------------------------------------------------
 #                      PROFILE TAB
-# =============================================================
+# -------------------------------------------------------------
 with tab_profile:
     st.markdown("<div class='glow-header'>Profile</div>", unsafe_allow_html=True)
 
-    # Featured Athlete banner (highest sessions)
-    featured_badge_html = render_rank_badge(top_user_rank_letter, top_user_consistency)
+    featured_html = render_rank_badge(top_user_rank_letter)
     st.markdown(
         f"<div class='featured-line'>🏆 Featured Athlete: <b>{top_user}</b> – "
-        f"{featured_badge_html} – <b>{top_user_sessions}</b> sessions</div>",
+        f"{featured_html} – <b>{top_user_sessions}</b> sessions</div>",
         unsafe_allow_html=True
     )
 
-    # Default selection = top user
     selected = st.selectbox(
         "Select Member",
         users,
-        index=users.index(top_user) if top_user in users else 0
+        index=users.index(top_user)
     )
 
-    total_sessions_user = int(sessions.get(selected, 0))
-    total_minutes_user = int(duration.get(selected, 0))
+    total_sessions_user = int(sessions[selected])
+    total_minutes_user = int(duration[selected])
     total_hours_user = round(total_minutes_user / 60, 1)
-    consistency_user = consistency_map.get(selected, 0.0)
-    rank_letter_user = rank_map.get(selected, "E")
-    rank_badge_html = render_rank_badge(rank_letter_user, consistency_user)
+    consistency_user = consistency_map[selected]
+    rank_letter_user = rank_map[selected]
+    rank_badge_html = render_rank_badge(rank_letter_user)
 
     today = dt.date.today()
     season_year = today.year
@@ -364,65 +356,41 @@ with tab_profile:
     days_left = (season_end - today).days
 
     st.markdown(
-        f"<div class='summary-line'><b>Season:</b> {season_year} | "
-        f"<b>Current Date:</b> {today.strftime('%m/%d/%Y')} | "
-        f"<b>Season ends in:</b> {days_left} days</div>",
+        f"<div class='summary-line'>"
+        f"<b>Season:</b> {season_year} | "
+        f"<b>Current Date:</b> {today} | "
+        f"<b>Season ends in:</b> {days_left} days"
+        f"</div>",
         unsafe_allow_html=True
     )
 
-    # Name + Rank in header
     st.markdown(
         f"<div class='sub-header'>{selected} – {rank_badge_html}</div>",
         unsafe_allow_html=True
     )
 
-    # --- STAT BOXES ------------------------------------------
     c1, c2, c3, c4 = st.columns(4)
-
-    c1.markdown(
-        f"<div class='stat-box'>"
-        f"<div class='stat-value'>{total_sessions_user}</div>"
-        f"<div class='stat-label'>Total Sessions</div>"
-        f"</div>",
-        unsafe_allow_html=True
-    )
-    c2.markdown(
-        f"<div class='stat-box'>"
-        f"<div class='stat-value'>{total_hours_user}</div>"
-        f"<div class='stat-label'>Total Hours</div>"
-        f"</div>",
-        unsafe_allow_html=True
-    )
-    c3.markdown(
-        f"<div class='stat-box'>"
-        f"<div class='stat-value'>{days_left}</div>"
-        f"<div class='stat-label'>Days Left</div>"
-        f"</div>",
-        unsafe_allow_html=True
-    )
-    c4.markdown(
-        f"<div class='stat-box'>"
-        f"<div class='stat-value'>{consistency_user:.1f}%</div>"
-        f"<div class='stat-label'>Season Consistency</div>"
-        f"</div>",
-        unsafe_allow_html=True
-    )
+    c1.markdown(f"<div class='stat-box'><div class='stat-value'>{total_sessions_user}</div><div class='stat-label'>Total Sessions</div></div>", unsafe_allow_html=True)
+    c2.markdown(f"<div class='stat-box'><div class='stat-value'>{total_hours_user}</div><div class='stat-label'>Total Hours</div></div>", unsafe_allow_html=True)
+    c3.markdown(f"<div class='stat-box'><div class='stat-value'>{days_left}</div><div class='stat-label'>Days Left</div></div>", unsafe_allow_html=True)
+    c4.markdown(f"<div class='stat-box'><div class='stat-value'>{consistency_user:.1f}%</div><div class='stat-label'>Season Consistency</div></div>", unsafe_allow_html=True)
 
     st.markdown("<div class='sub-header'>💪 Top Muscles Used</div>", unsafe_allow_html=True)
     mus_series = pd.Series(user_muscles[selected]).sort_values(ascending=False)
     st.dataframe(mus_series.head(5), use_container_width=True)
 
+    st.markdown("<div class='sub-header'>🩶 Least Used Muscles</div>", unsafe_allow_html=True)
+    least_series = pd.Series(user_muscles[selected]).sort_values(ascending=True)
+    st.dataframe(least_series.head(5), use_container_width=True)
+
     st.markdown("<div class='sub-header'>📘 Workout Log</div>", unsafe_allow_html=True)
     log = df[df[col_name] == selected][[col_timestamp, col_muscles, col_duration]]
-    st.dataframe(
-        log.sort_values(col_timestamp, ascending=False),
-        use_container_width=True,
-        hide_index=True
-    )
+    st.dataframe(log.sort_values(col_timestamp, ascending=False), use_container_width=True, hide_index=True)
 
-# =============================================================
+
+# -------------------------------------------------------------
 #                      LEADERBOARD TAB
-# =============================================================
+# -------------------------------------------------------------
 with tab_lb:
     st.markdown("<div class='glow-header'>Leaderboards</div>", unsafe_allow_html=True)
 
@@ -430,215 +398,109 @@ with tab_lb:
         "User": sessions.index,
         "Sessions": sessions.values,
         "Total Minutes": duration.values,
+        "Consistency %": [consistency_map[u] for u in sessions.index],
+        "Rank": [rank_map[u] for u in sessions.index]
     })
+
     lb["Hours"] = (lb["Total Minutes"] / 60).round(1)
-    lb["Consistency %"] = [consistency_map[u] for u in lb["User"]]
-    lb["Rank Letter"] = [rank_map[u] for u in lb["User"]]
-    lb["Rank Title"] = [RANK_CONFIG[r]["label"] for r in lb["Rank Letter"]]
-    lb["Icon"] = [RANK_CONFIG[r]["emoji"] for r in lb["Rank Letter"]]
 
-    # Sort by Sessions (highest first)
     lb = lb.sort_values("Sessions", ascending=False).reset_index(drop=True)
-    lb.index = lb.index + 1
-    lb.insert(0, "Position", lb.index)
+    lb.insert(0, "Position", lb.index + 1)
 
-    lb_display = lb[["Position", "User", "Icon", "Rank Title", "Consistency %", "Sessions", "Hours"]]
+    st.dataframe(lb, hide_index=True, use_container_width=True)
 
-    st.dataframe(lb_display, hide_index=True, use_container_width=True)
 
-# =============================================================
-#                  FITNESS ACTIVITY TAB
-# =============================================================
+# -------------------------------------------------------------
+#                      FITNESS ACTIVITY TAB
+# -------------------------------------------------------------
 with tab_activity:
     st.markdown("<div class='glow-header'>Fitness Activity</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='sub-header'>🔥 Most Trained Muscle Groups</div>", unsafe_allow_html=True)
-    st.plotly_chart(
-        px.bar(mus_df.sort_values("Count", ascending=False), x="Muscle", y="Count"),
-        use_container_width=True
-    )
+    st.plotly_chart(px.bar(mus_df.sort_values("Count", ascending=False), x="Muscle", y="Count"), use_container_width=True)
 
     st.markdown("<div class='sub-header'>⏳ Total Hours per Member</div>", unsafe_allow_html=True)
-    st.plotly_chart(
-        px.bar(hours_df, x="User", y="Hours"),
-        use_container_width=True
-    )
+    st.plotly_chart(px.bar(hours_df, x="User", y="Hours"), use_container_width=True)
 
     st.markdown("<div class='sub-header'>💪 Muscle Distribution</div>", unsafe_allow_html=True)
-    st.plotly_chart(
-        px.pie(mus_df, names="Muscle", values="Count", hole=0.45),
-        use_container_width=True
-    )
+    st.plotly_chart(px.pie(mus_df, names="Muscle", values="Count", hole=0.45), use_container_width=True)
 
     st.markdown("<div class='sub-header'>📅 Training Frequency (7-Day Avg)</div>", unsafe_allow_html=True)
-    st.plotly_chart(
-        px.line(sessions_per_day, x="date", y="7day_avg"),
-        use_container_width=True
-    )
+    st.plotly_chart(px.line(sessions_per_day, x="date", y="7day_avg"), use_container_width=True)
 
     st.markdown("<div class='sub-header'>📈 Sessions Over Time</div>", unsafe_allow_html=True)
-    st.plotly_chart(
-        px.line(sessions_per_day, x="date", y="sessions"),
-        use_container_width=True
-    )
+    st.plotly_chart(px.line(sessions_per_day, x="date", y="sessions"), use_container_width=True)
 
     st.markdown("<div class='sub-header'>📊 User × Muscle Frequency Table</div>", unsafe_allow_html=True)
     st.dataframe(activity_matrix, use_container_width=True)
 
-# =============================================================
+
+# -------------------------------------------------------------
 #                      DASHBOARD TAB
-# =============================================================
+# -------------------------------------------------------------
 with tab_dash:
     st.markdown("<div class='glow-header'>Dashboard Overview</div>", unsafe_allow_html=True)
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.markdown(
-        f"<div class='stat-box'>"
-        f"<div class='stat-value'>{len(df)}</div>"
-        f"<div class='stat-label'>Form Entries</div>"
-        f"</div>",
-        unsafe_allow_html=True
-    )
-    c2.markdown(
-        f"<div class='stat-box'>"
-        f"<div class='stat-value'>{df[col_name].nunique()}</div>"
-        f"<div class='stat-label'>Active Members</div>"
-        f"</div>",
-        unsafe_allow_html=True
-    )
-    c3.markdown(
-        f"<div class='stat-box'>"
-        f"<div class='stat-value'>{int(sessions.sum())}</div>"
-        f"<div class='stat-label'>Total Sessions</div>"
-        f"</div>",
-        unsafe_allow_html=True
-    )
-    c4.markdown(
-        f"<div class='stat-box'>"
-        f"<div class='stat-value'>{round(duration.sum()/60,1)}</div>"
-        f"<div class='stat-label'>Total Hours</div>"
-        f"</div>",
-        unsafe_allow_html=True
-    )
+    c1.markdown(f"<div class='stat-box'><div class='stat-value'>{len(df)}</div><div class='stat-label'>Form Entries</div></div>", unsafe_allow_html=True)
+    c2.markdown(f"<div class='stat-box'><div class='stat-value'>{df[col_name].nunique()}</div><div class='stat-label'>Active Members</div></div>", unsafe_allow_html=True)
+    c3.markdown(f"<div class='stat-box'><div class='stat-value'>{sessions.sum()}</div><div class='stat-label'>Total Sessions</div></div>", unsafe_allow_html=True)
+    c4.markdown(f"<div class='stat-box'><div class='stat-value'>{round(duration.sum()/60,1)}</div><div class='stat-label'>Total Hours</div></div>", unsafe_allow_html=True)
 
     st.markdown("<div class='sub-header'>🔥 Recent Activity</div>", unsafe_allow_html=True)
-    st.dataframe(
-        df.sort_values(col_timestamp, ascending=False).head(25),
-        use_container_width=True,
-        hide_index=True
-    )
+    st.dataframe(df.sort_values(col_timestamp, ascending=False).head(25), use_container_width=True, hide_index=True)
 
-# =============================================================
+
+# -------------------------------------------------------------
 #                      RANKING SYSTEM TAB
-# =============================================================
+# -------------------------------------------------------------
 with tab_ranks:
-   st.markdown("""
-<style>
-.rank-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 10px;
-}
+    st.markdown("<div class='glow-header'>Ranking System</div>", unsafe_allow_html=True)
+    st.markdown("Below is the Solo-Leveling inspired Rank System based on **sessions / 365**.", unsafe_allow_html=True)
 
-.rank-table th, .rank-table td {
-    padding: 10px;
-    text-align: center;
-    font-size: 16px;
-    border: 1px solid #1e293b;
-}
-
-/* S Rank – Purple + Gold */
-.s-rank {
-    background: linear-gradient(90deg, #5b21b6, #facc15);
-    color: white;
-    font-weight: 900;
-}
-
-/* A Rank – Blue */
-.a-rank {
-    background: rgba(59, 130, 246, 0.55);
-    color: white;
-    font-weight: 800;
-}
-
-/* B Rank – Green */
-.b-rank {
-    background: rgba(16, 185, 129, 0.55);
-    color: white;
-    font-weight: 800;
-}
-
-/* C Rank – Yellow */
-.c-rank {
-    background: rgba(234, 179, 8, 0.55);
-    color: black;
-    font-weight: 700;
-}
-
-/* D Rank – Orange */
-.d-rank {
-    background: rgba(249, 115, 22, 0.55);
-    color: black;
-    font-weight: 700;
-}
-
-/* E Rank – Grey */
-.e-rank {
-    background: rgba(156, 163, 175, 0.45);
-    color: white;
-    font-weight: 700;
-}
-</style>
-
-
-<table class="rank-table">
-    <tr>
-        <th>Rank</th>
-        <th>Letter</th>
-        <th>Sessions Range</th>
-        <th>Consistency %</th>
-    </tr>
-
-    <tr class="s-rank">
-        <td>S-Rank Athlete</td>
-        <td>S</td>
-        <td>250 – 365</td>
-        <td>68% – 100%</td>
-    </tr>
-
-    <tr class="a-rank">
-        <td>A-Rank Athlete</td>
-        <td>A</td>
-        <td>180 – 249</td>
-        <td>49% – 68%</td>
-    </tr>
-
-    <tr class="b-rank">
-        <td>B-Rank Athlete</td>
-        <td>B</td>
-        <td>120 – 179</td>
-        <td>33% – 49%</td>
-    </tr>
-
-    <tr class="c-rank">
-        <td>C-Rank Athlete</td>
-        <td>C</td>
-        <td>60 – 119</td>
-        <td>16% – 33%</td>
-    </tr>
-
-    <tr class="d-rank">
-        <td>D-Rank Athlete</td>
-        <td>D</td>
-        <td>30 – 59</td>
-        <td>8% – 16%</td>
-    </tr>
-
-    <tr class="e-rank">
-        <td>E-Rank Athlete</td>
-        <td>E</td>
-        <td>0 – 29</td>
-        <td>0% – 8%</td>
-    </tr>
-</table>
-""", unsafe_allow_html=True)
+    st.markdown("""
+    <table class="rank-table">
+        <tr>
+            <th>Rank</th>
+            <th>Letter</th>
+            <th>Sessions Range</th>
+            <th>Consistency %</th>
+        </tr>
+        <tr class="s-rank">
+            <td>S-Rank Athlete</td>
+            <td>S</td>
+            <td>250 – 365</td>
+            <td>68% – 100%</td>
+        </tr>
+        <tr class="a-rank">
+            <td>A-Rank Athlete</td>
+            <td>A</td>
+            <td>180 – 249</td>
+            <td>49% – 68%</td>
+        </tr>
+        <tr class="b-rank">
+            <td>B-Rank Athlete</td>
+            <td>B</td>
+            <td>120 – 179</td>
+            <td>33% – 49%</td>
+        </tr>
+        <tr class="c-rank">
+            <td>C-Rank Athlete</td>
+            <td>C</td>
+            <td>60 – 119</td>
+            <td>16% – 33%</td>
+        </tr>
+        <tr class="d-rank">
+            <td>D-Rank Athlete</td>
+            <td>D</td>
+            <td>30 – 59</td>
+            <td>8% – 16%</td>
+        </tr>
+        <tr class="e-rank">
+            <td>E-Rank Athlete</td>
+            <td>E</td>
+            <td>0 – 29</td>
+            <td>0% – 8%</td>
+        </tr>
+    </table>
+    """, unsafe_allow_html=True)
