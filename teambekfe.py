@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit as st 
 import pandas as pd
 import numpy as np
 import plotly.express as px
@@ -92,6 +92,17 @@ st.markdown(
         margin-bottom: 10px;
     }
 
+    .featured-line {
+        font-size: 16px;
+        color: #ffe8a3;
+        background: rgba(34, 22, 6, 0.9);
+        border-radius: 8px;
+        padding: 8px 12px;
+        border: 1px solid #facc15;
+        box-shadow: 0 0 14px rgba(250, 204, 21, 0.7);
+        margin-bottom: 14px;
+    }
+
     .js-plotly-plot .plotly {
         background: transparent !important;
     }
@@ -153,12 +164,15 @@ def parse_duration(text):
     hours = minutes = 0
     h = re.search(r"(\d+)\s*(hour|hours|hr|hrs|h)\b", s)
     m = re.search(r"(\d+)\s*(minute|minutes|min|mins|m)\b", s)
-    if h: hours = int(h.group(1))
-    if m: minutes = int(m.group(1))
+    if h:
+        hours = int(h.group(1))
+    if m:
+        minutes = int(m.group(1))
 
     if not h and not m:
         nums = re.findall(r"\d+", s)
-        if len(nums) == 1: minutes = int(nums[0])
+        if len(nums) == 1:
+            minutes = int(nums[0])
         elif len(nums) == 2:
             hours = int(nums[0])
             minutes = int(nums[1])
@@ -198,6 +212,46 @@ activity_matrix = pd.DataFrame(user_muscles).fillna(0).astype(int).T
 users = sorted(df[col_name].unique())
 
 # -------------------------------------------------------------
+#                PRESTIGE RANK SYSTEM
+# -------------------------------------------------------------
+def get_prestige(s):
+    if s >= 301:
+        return "Mythic"
+    elif s >= 251:
+        return "Diamond"
+    elif s >= 181:
+        return "Platinum"
+    elif s >= 101:
+        return "Gold"
+    elif s >= 51:
+        return "Silver"
+    else:
+        return "Bronze"
+
+# Use 💎 and 👑 as core icons, with colors per rank
+PRESTIGE_CONFIG = {
+    "Mythic":   {"color": "#c084fc", "badge": "👑"},
+    "Diamond":  {"color": "#60a5fa", "badge": "💎"},
+    "Platinum": {"color": "#e5e7eb", "badge": "💎"},
+    "Gold":     {"color": "#facc15", "badge": "👑"},
+    "Silver":   {"color": "#e5e7eb", "badge": "💎"},
+    "Bronze":   {"color": "#f97316", "badge": "👑"},
+}
+
+def render_prestige_badge(prestige: str) -> str:
+    cfg = PRESTIGE_CONFIG.get(prestige, {"color": "#9ca3af", "badge": "💎"})
+    color = cfg["color"]
+    badge = cfg["badge"]
+    return f"<span style='color:{color}; font-weight:800;'>{badge} {prestige}</span>"
+
+prestige_map = {user: get_prestige(int(sessions.get(user, 0))) for user in sessions.index}
+
+# User with the highest number of sessions (featured)
+top_user = sessions.idxmax()
+top_user_sessions = int(sessions[top_user])
+top_user_prestige = prestige_map.get(top_user, "Bronze")
+
+# -------------------------------------------------------------
 #                TOP BUTTON (GOOGLE FORM)
 # -------------------------------------------------------------
 st.markdown("""
@@ -232,11 +286,26 @@ tab_profile, tab_lb, tab_activity, tab_dash = st.tabs(
 with tab_profile:
     st.markdown("<div class='glow-header'>Profile</div>", unsafe_allow_html=True)
 
-    selected = st.selectbox("Select Member", users)
+    # Featured top user banner
+    featured_badge_html = render_prestige_badge(top_user_prestige)
+    st.markdown(
+        f"<div class='featured-line'>🏆 Featured Athlete: <b>{top_user}</b> – "
+        f"{featured_badge_html} – <b>{top_user_sessions}</b> sessions</div>",
+        unsafe_allow_html=True
+    )
+
+    # Default selection = top user (highest sessions), but user can change
+    selected = st.selectbox(
+        "Select Member",
+        users,
+        index=users.index(top_user) if top_user in users else 0
+    )
 
     total_sessions_user = int(sessions.get(selected, 0))
     total_minutes_user = int(duration.get(selected, 0))
     total_hours_user = round(total_minutes_user / 60, 1)
+    prestige_user = prestige_map.get(selected, "Bronze")
+    prestige_badge_html = render_prestige_badge(prestige_user)
 
     today = dt.date.today()
     season_year = today.year
@@ -250,12 +319,34 @@ with tab_profile:
         unsafe_allow_html=True
     )
 
-    st.markdown(f"<div class='sub-header'>{selected} – Status Window</div>", unsafe_allow_html=True)
+    # Name + Prestige in header
+    st.markdown(
+        f"<div class='sub-header'>{selected} – {prestige_badge_html}</div>",
+        unsafe_allow_html=True
+    )
 
     c1, c2, c3 = st.columns(3)
-    c1.markdown(f"<div class='stat-box'><div class='stat-value'>{total_sessions_user}</div><div class='stat-label'>Total Sessions</div></div>", unsafe_allow_html=True)
-    c2.markdown(f"<div class='stat-box'><div class='stat-value'>{total_hours_user}</div><div class='stat-label'>Total Hours</div></div>", unsafe_allow_html=True)
-    c3.markdown(f"<div class='stat-box'><div class='stat-value'>{days_left}</div><div class='stat-label'>Days Left</div></div>", unsafe_allow_html=True)
+    c1.markdown(
+        f"<div class='stat-box'>"
+        f"<div class='stat-value'>{total_sessions_user}</div>"
+        f"<div class='stat-label'>Total Sessions</div>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
+    c2.markdown(
+        f"<div class='stat-box'>"
+        f"<div class='stat-value'>{total_hours_user}</div>"
+        f"<div class='stat-label'>Total Hours</div>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
+    c3.markdown(
+        f"<div class='stat-box'>"
+        f"<div class='stat-value'>{days_left}</div>"
+        f"<div class='stat-label'>Days Left</div>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
 
     st.markdown("<div class='sub-header'>💪 Top Muscles Used</div>", unsafe_allow_html=True)
     mus_series = pd.Series(user_muscles[selected]).sort_values(ascending=False)
@@ -277,9 +368,16 @@ with tab_lb:
         "Total Minutes": duration.values,
     })
     lb["Hours"] = (lb["Total Minutes"] / 60).round(1)
+    lb["Prestige"] = [prestige_map[u] for u in lb["User"]]
+    lb["Badge"] = [PRESTIGE_CONFIG[p]["badge"] for p in lb["Prestige"]]
+
+    # Sort by Sessions (highest first)
     lb = lb.sort_values("Sessions", ascending=False).reset_index(drop=True)
     lb.index = lb.index + 1
     lb.insert(0, "Rank", lb.index)
+
+    # Reorder columns for display
+    lb = lb[["Rank", "User", "Badge", "Prestige", "Sessions", "Hours"]]
 
     st.dataframe(lb, hide_index=True, use_container_width=True)
 
@@ -314,11 +412,34 @@ with tab_dash:
     st.markdown("<div class='glow-header'>Dashboard Overview</div>", unsafe_allow_html=True)
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.markdown(f"<div class='stat-box'><div class='stat-value'>{len(df)}</div><div class='stat-label'>Form Entries</div></div>", unsafe_allow_html=True)
-    c2.markdown(f"<div class='stat-box'><div class='stat-value'>{df[col_name].nunique()}</div><div class='stat-label'>Active Members</div></div>", unsafe_allow_html=True)
-    c3.markdown(f"<div class='stat-box'><div class='stat-value'>{int(sessions.sum())}</div><div class='stat-label'>Total Sessions</div></div>", unsafe_allow_html=True)
-    c4.markdown(f"<div class='stat-box'><div class='stat-value'>{round(duration.sum()/60,1)}</div><div class='stat-label'>Total Hours</div></div>", unsafe_allow_html=True)
+    c1.markdown(
+        f"<div class='stat-box'>"
+        f"<div class='stat-value'>{len(df)}</div>"
+        f"<div class='stat-label'>Form Entries</div>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
+    c2.markdown(
+        f"<div class='stat-box'>"
+        f"<div class='stat-value'>{df[col_name].nunique()}</div>"
+        f"<div class='stat-label'>Active Members</div>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
+    c3.markdown(
+        f"<div class='stat-box'>"
+        f"<div class='stat-value'>{int(sessions.sum())}</div>"
+        f"<div class='stat-label'>Total Sessions</div>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
+    c4.markdown(
+        f"<div class='stat-box'>"
+        f"<div class='stat-value'>{round(duration.sum()/60,1)}</div>"
+        f"<div class='stat-label'>Total Hours</div>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
 
     st.markdown("<div class='sub-header'>🔥 Recent Activity</div>", unsafe_allow_html=True)
     st.dataframe(df.sort_values(col_timestamp, ascending=False).head(25), use_container_width=True, hide_index=True)
-
