@@ -339,6 +339,40 @@ with tab_profile:
     st.dataframe(log.sort_values(col_timestamp, ascending=False), hide_index=True)
 
 # -------------------------------------------------------------
+# 📅 Monthly Session Breakdown (Ranked by Performance)
+# -------------------------------------------------------------
+st.markdown("<div class='sub-header'>📅 Monthly Session Performance</div>", unsafe_allow_html=True)
+
+monthly_sessions = (
+    df[df[col_name] == selected]
+    .groupby(["month", "month_name"])
+    .size()
+    .reset_index(name="Sessions")
+    .sort_values("Sessions", ascending=False)
+)
+
+# Ensure months with 0 sessions still show (optional but nice)
+all_months = pd.DataFrame({
+    "month": range(1, 13),
+    "month_name": [dt.date(1900, m, 1).strftime("%B") for m in range(1, 13)]
+})
+
+monthly_sessions = (
+    all_months
+    .merge(monthly_sessions, on=["month", "month_name"], how="left")
+    .fillna(0)
+)
+
+monthly_sessions["Sessions"] = monthly_sessions["Sessions"].astype(int)
+
+st.dataframe(
+    monthly_sessions[["month_name", "Sessions"]],
+    hide_index=True,
+    use_container_width=True
+)
+
+
+# -------------------------------------------------------------
 #                LEADERBOARD TAB
 # -------------------------------------------------------------
 with tab_lb:
