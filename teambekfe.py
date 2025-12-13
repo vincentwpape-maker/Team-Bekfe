@@ -224,12 +224,273 @@ border:1px solid #3ecbff;color:#aee6ff;font-size:16px;text-decoration:none;">
 </a>
 """, unsafe_allow_html=True)
 
+
 # -------------------------------------------------------------
 #                TABS
 # -------------------------------------------------------------
 tab_profile, tab_lb, tab_activity, tab_dash, tab_ranks = st.tabs(
     ["Profile","Leaderboards","Fitness Activity","Dashboard","Ranking System"]
 )
+import base64
+import json
+
+def img_to_base64(path: str) -> str:
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
+
+# Decide gender by name (edit anytime)
+GENDER_MAP = {
+    "Vincent": "male",
+    "Alain": "male",
+    "Douglas": "male",
+    "Dimitri": "male",
+    "Mikael": "male",
+    "Junior": "male",
+    "Danimix": "male",
+    "Bousik": "male",
+    "Gregory": "male",
+    "Louis": "male",
+    # Add female names here later if needed:
+    # "Sophie": "female",
+}
+
+# Map your Google Form muscle labels -> overlay buckets
+# (Add aliases so your exact text matches)
+MUSCLE_ALIASES = {
+    "Upper Body": "UPPER_BODY",
+    "Lower Body": "LOWER_BODY",
+    "Core": "CORE",
+    "Grips": "GRIPS",
+    "Forearms": "FOREARMS",
+
+    "Chest": "CHEST",
+    "Back": "BACK",
+    "Shoulders": "SHOULDERS",
+    "Arms": "ARMS",
+    "Legs": "LEGS",
+    "Glutes": "GLUTES",
+    "Glutes & Legs": "GLUTES",
+}
+
+OVERLAY_BUCKETS = ["CHEST","BACK","SHOULDERS","ARMS","FOREARMS","GRIPS","CORE","UPPER_BODY","LOWER_BODY","LEGS","GLUTES"]
+
+def bucket_counts_for_user(selected_user: str) -> dict:
+    raw = user_muscles.get(selected_user, {})
+    out = {k: 0 for k in OVERLAY_BUCKETS}
+
+    for k, v in raw.items():
+        key = str(k).strip()
+        bucket = MUSCLE_ALIASES.get(key)
+
+        # loose matching fallback
+        if not bucket:
+            lk = key.lower()
+            if "upper" in lk: bucket = "UPPER_BODY"
+            elif "lower" in lk: bucket = "LOWER_BODY"
+            elif "core" in lk or "abs" in lk: bucket = "CORE"
+            elif "grip" in lk: bucket = "GRIPS"
+            elif "forearm" in lk: bucket = "FOREARMS"
+            elif "chest" in lk or "pec" in lk: bucket = "CHEST"
+            elif "back" in lk or "lat" in lk or "trap" in lk: bucket = "BACK"
+            elif "shoulder" in lk or "delt" in lk: bucket = "SHOULDERS"
+            elif "arm" in lk or "bicep" in lk or "tricep" in lk: bucket = "ARMS"
+            elif "glute" in lk or "ham" in lk: bucket = "GLUTES"
+            elif "leg" in lk or "quad" in lk or "calf" in lk: bucket = "LEGS"
+
+        if bucket:
+            out[bucket] += int(v)
+
+    return out
+
+
+def render_game_avatar_with_overlay(selected_user: str, gender: str, buckets: dict) -> str:
+    """
+    Game avatar PNG as background + transparent SVG muscle overlay + numbers.
+    NOTE: Muscle shapes are positioned for a generic front-facing avatar.
+          You can tweak the rectangles/polygons later to align perfectly to your art.
+    """
+    avatar_path = "assets/male.png" if gender == "male" else "assets/female.png"
+    avatar_b64 = img_to_base64(avatar_path)
+
+    # Color intensity by relative usage
+    maxv = max(buckets.values()) if buckets else 1
+    maxv = max(maxv, 1)
+
+    def tier(v):
+        r = v / maxv
+        if v <= 0: return ("rgba(80,160,255,0.08)", "rgba(120,200,255,0.20)")
+        if r >= 0.75: return ("rgba(250,204,21,0.55)", "rgba(250,204,21,0.85)")   # high = gold
+        if r >= 0.35: return ("rgba(34,211,238,0.45)", "rgba(34,211,238,0.80)")   # mid = cyan
+        return ("rgba(59,130,246,0.35)", "rgba(59,130,246,0.70)")                 # low = blue
+
+    # Define overlay regions (simple but readable)
+    # You’ll adjust these positions once to match your avatar art.
+    regions = [
+        # id, label, SVG shape (x,y,w,h), label position (lx, ly)
+        ("CHEST",      "CHEST",      ("rect",  120, 160, 110,  70), (175, 205)),
+        ("SHOULDERS",  "SHOULDERS",  ("rect",  105, 135, 140,  35), (175, 155)),
+        ("ARMS",       "ARMS",       ("rect",   75, 165,  55, 120), (102, 225)),
+        ("ARMS_R",     "ARMS",       ("rect",  240, 165,  55, 120), (267, 225)),
+        ("CORE",       "CORE",       ("rect",  135, 235,  80,  90), (175, 285)),
+        ("FOREARMS",   "FOREARMS",   ("rect",   70, 285,  60,  80), (100, 330)),
+        ("FOREARMS_R", "FOREARMS",   ("rect",  240, 285,  60,  80), (270, 330)),
+        ("LEGS",       "LEGS",       ("rect",  130, 335,  90, 160), (175, 420)),
+        ("GLUTES",     "GLUTES",     ("rect",  135, 315,  80,  35), (175, 338)),
+    ]
+
+    # Build SVG with colored regions + numbers
+    svg_parts = []
+    labels_parts = []
+
+    # Choose what value to display for each region id
+    # (ARMS_R uses ARMS, FOREARMS_R uses FOREARMS)
+    def get_value(region_id):
+        if region_id in ("ARMS_R",): return buckets.get("ARMS", 0)
+        if region_id in ("FOREARMS_R",): return buckets.get("FOREARMS", 0)
+        return buckets.get(region_id, 0)
+
+    for rid, text, (shape, x, y, w, h), (lx, ly) in regions:
+        v = int(get_value(rid))
+        fill, stroke = tier(v)
+
+        svg_parts.append(
+            f"""<rect id="{rid}" x="{x}" y="{y}" width="{w}" height="{h}"
+                 rx="14" ry="14"
+                 fill="{fill}" stroke="{stroke}" stroke-width="2"
+                 filter="url(#glow)" />"""
+        )
+
+        # Always display number; if you want blanks on 0, change to: ("" if v==0 else str(v))
+        labels_parts.append(
+            f"""<text x="{lx}" y="{ly}" class="lbl">{text} {v}</text>"""
+        )
+
+    regions_json = json.dumps([{"id": rid, "label": lab, "value": int(get_value(rid))} for rid, lab, *_ in regions])
+
+    html = f"""
+    <style>
+      .avatar-wrap {{
+        position: relative;
+        width: 100%;
+        max-width: 520px;
+        margin: 0 auto;
+        border-radius: 16px;
+        border: 1px solid rgba(63,169,255,0.55);
+        box-shadow: 0 0 22px rgba(0,150,255,0.18);
+        overflow: hidden;
+        background: radial-gradient(circle at top, rgba(20,40,70,0.55) 0%, rgba(5,8,16,0.92) 55%);
+      }}
+      .avatar-bg {{
+        width: 100%;
+        display: block;
+        user-select: none;
+        -webkit-user-drag: none;
+      }}
+      .overlay {{
+        position: absolute;
+        inset: 0;
+      }}
+      .lbl {{
+        fill: #e5f4ff;
+        font-weight: 900;
+        font-size: 14px;
+        text-anchor: middle;
+        paint-order: stroke;
+        stroke: rgba(0,0,0,0.75);
+        stroke-width: 3px;
+      }}
+      .title {{
+        font-family: system-ui, -apple-system, Segoe UI, Roboto;
+        color: #cce8ff;
+        font-weight: 900;
+        margin: 0 0 10px 2px;
+        text-align: center;
+      }}
+      .legend {{
+        display:flex; gap:10px; justify-content:center; flex-wrap:wrap;
+        padding: 10px 0 12px 0;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto;
+        color:#9bd4ff; font-weight:800;
+      }}
+      .chip {{ padding:6px 10px; border-radius:999px; border:1px solid rgba(63,169,255,0.35); background: rgba(5,8,16,0.55); }}
+      .low {{ color:#3b82f6; }}
+      .mid {{ color:#22d3ee; }}
+      .high {{ color:#facc15; }}
+      #tip {{
+        position:absolute;
+        display:none;
+        padding:8px 10px;
+        border-radius: 10px;
+        background: rgba(5,8,16,0.9);
+        border: 1px solid rgba(63,169,255,0.45);
+        color: #cce8ff;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto;
+        font-weight: 900;
+        box-shadow: 0 0 18px rgba(0,150,255,0.18);
+        pointer-events:none;
+        z-index: 10;
+      }}
+    </style>
+
+    <div class="title">{selected_user} — Avatar Muscle Targets</div>
+
+    <div class="avatar-wrap" id="wrap">
+      <img class="avatar-bg" src="data:image/png;base64,{avatar_b64}" />
+
+      <svg class="overlay" viewBox="0 0 370 560" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="6" result="blur"/>
+            <feMerge>
+              <feMergeNode in="blur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+        </defs>
+
+        {''.join(svg_parts)}
+        {''.join(labels_parts)}
+      </svg>
+
+      <div id="tip"></div>
+    </div>
+
+    <div class="legend">
+      <span class="chip"><span class="low">Low</span></span>
+      <span class="chip"><span class="mid">Medium</span></span>
+      <span class="chip"><span class="high">High</span></span>
+    </div>
+
+    <script>
+      const regions = {regions_json};
+      const wrap = document.getElementById("wrap");
+      const tip = document.getElementById("tip");
+
+      function showTip(text, x, y) {{
+        tip.style.display = "block";
+        tip.innerText = text;
+        const rect = wrap.getBoundingClientRect();
+        tip.style.left = (x - rect.left + 12) + "px";
+        tip.style.top  = (y - rect.top  + 12) + "px";
+      }}
+
+      function hideTip() {{
+        tip.style.display = "none";
+      }}
+
+      // Hover tooltips on rectangles
+      regions.forEach(r => {{
+        const el = document.getElementById(r.id);
+        if (!el) return;
+        el.addEventListener("mousemove", (e) => {{
+          showTip(`${{r.label}} — ${{r.value}}`, e.clientX, e.clientY);
+        }});
+        el.addEventListener("mouseleave", hideTip);
+      }});
+    </script>
+    """
+    return html
+
 import base64
 import json
 
