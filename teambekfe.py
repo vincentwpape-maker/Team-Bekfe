@@ -711,6 +711,23 @@ with tab_profile:
     st.dataframe(log.sort_values(col_timestamp, ascending=False), hide_index=True)
 
 # -------------------------------------------------------------
+# 🧬 AVATAR: Muscle Nodes Visualization
+# -------------------------------------------------------------
+st.markdown("<div class='sub-header'>🧬 Muscle Map (Avatar)</div>", unsafe_allow_html=True)
+
+gender = GENDER_MAP.get(selected, "male")
+buckets = bucket_counts_for_user(selected)
+
+avatar_html = render_avatar_html(
+    gender=gender,
+    buckets=buckets,
+    title=f"{selected} — {'Male' if gender=='male' else 'Female'} Avatar"
+)
+
+components.html(avatar_html, height=720, scrolling=False)
+
+
+# -------------------------------------------------------------
 # 📉 MONTHLY TRAINING CONSISTENCY
 # -------------------------------------------------------------
 st.markdown("<div class='sub-header'>📉 Monthly Training Consistency</div>", unsafe_allow_html=True)
