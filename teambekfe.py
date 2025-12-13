@@ -225,4 +225,4 @@ top_user_sessions = int(sessions[top_user])
 tab_profile, tab_lb, tab_activity, tab_dash, tab_ranks = st.tabs(
     ["Profile", "Leaderboards", "Fitness Activity", "Dashboard", "Ranking System"]
 )
-git restore .
+
