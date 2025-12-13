@@ -107,6 +107,9 @@ def load_data():
     return df
 
 df = load_data()
+df["month"] = df[col_timestamp].dt.month
+df["month_name"] = df[col_timestamp].dt.strftime("%B")
+
 
 # -------------------------------------------------------------
 #             CLEANING + TRANSFORMATION
