@@ -339,6 +339,34 @@ with tab_profile:
     st.dataframe(log.sort_values(col_timestamp, ascending=False), hide_index=True)
 
 # -------------------------------------------------------------
+# 📉 MONTHLY TRAINING CONSISTENCY
+# -------------------------------------------------------------
+st.markdown("<div class='sub-header'>📉 Monthly Training Consistency</div>", unsafe_allow_html=True)
+
+df_user = df[df[col_name] == selected].copy()
+df_user["month"] = df_user[col_timestamp].dt.month
+df_user["Month"] = df_user[col_timestamp].dt.strftime("%B")
+
+monthly_sessions = (
+    df_user.groupby(["month", "Month"])
+    .size()
+    .reset_index(name="Sessions")
+    .sort_values("month")
+)
+
+st.plotly_chart(
+    px.bar(
+        monthly_sessions,
+        x="Month",
+        y="Sessions",
+        text="Sessions",
+        title=None
+    ).update_traces(textposition="outside")
+     .update_layout(yaxis_title="Sessions", xaxis_title=""),
+    use_container_width=True
+)
+
+# -------------------------------------------------------------
 #                LEADERBOARD TAB
 # -------------------------------------------------------------
 with tab_lb:
