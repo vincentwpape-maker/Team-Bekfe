@@ -844,6 +844,15 @@ with tab_profile:
 
     st.write(f"**{current_count} / {next_threshold} sessions to reach {next_rank or 'MAX'} Rank**")
 
+    st.markdown("<div class='sub-header'>🧍 Avatar Muscle Targets</div>", unsafe_allow_html=True)
+
+gender = GENDER_MAP.get(selected, "male")
+buckets = bucket_counts_for_user(selected)
+
+avatar_html = render_game_avatar_with_overlay(selected, gender, buckets)
+components.html(avatar_html, height=760, scrolling=False)
+
+
     # Top Muscles
     st.markdown("<div class='sub-header'>💪 Top Muscles Used</div>", unsafe_allow_html=True)
     top_df = pd.Series(user_muscles[selected]).sort_values(ascending=False).head(5)
