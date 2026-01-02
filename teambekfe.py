@@ -112,15 +112,15 @@ df = load_data()
 #             CLEANING + TRANSFORMATION
 # -------------------------------------------------------------
 col_timestamp = df.columns[0]
-col_name = df.columns[1]
-col_muscles = df.columns[3]
-col_duration = df.columns[4]
+col_name      = df.columns[1]
+col_muscles   = df.columns[3]
+col_duration  = df.columns[4]
 
 df[col_timestamp] = pd.to_datetime(df[col_timestamp], errors="coerce")
 
 def clean_name(n):
     if not isinstance(n, str): return ""
-    n = re.sub(r"[^a-z0-9 ]","", n.lower().strip())
+    n = re.sub(r"[^a-z0-9 ]", "", n.lower().strip())
     corrections = {
         "vincent":"Vincent","alain":"Alain","danimix":"Danimix",
         "dani mix":"Danimix","dimitri":"Dimitri","douglas":"Douglas",
@@ -132,7 +132,7 @@ def clean_name(n):
 df[col_name] = df[col_name].apply(clean_name)
 
 def parse_duration(t):
-    if not isinstance(t,str): return 0
+    if not isinstance(t, str): return 0
     t = t.lower()
     h = re.search(r"(\d+)\s*(hour|hr|h)", t)
     m = re.search(r"(\d+)\s*(min|m)", t)
@@ -141,52 +141,80 @@ def parse_duration(t):
 
     if not h and not m:
         nums = re.findall(r"\d+", t)
-        if len(nums)==1: mins = int(nums[0])
-        elif len(nums)==2:
+        if len(nums) == 1:
+            mins = int(nums[0])
+        elif len(nums) == 2:
             hours = int(nums[0])
-            mins = int(nums[1])
+            mins  = int(nums[1])
     return hours*60 + mins
 
 df["minutes"] = df[col_duration].apply(parse_duration)
 
 # -------------------------------------------------------------
+#             SEASON (YEAR) FILTER (2025 / 2026 SWITCH)
+# -------------------------------------------------------------
+df["year"] = df[col_timestamp].dt.year
+
+available_years = sorted([int(y) for y in df["year"].dropna().unique()])
+today = dt.date.today()
+current_year = today.year
+
+default_year = max(available_years) if available_years else current_year
+
+st.markdown("<div class='sub-header'>📅 Select Season</div>", unsafe_allow_html=True)
+season_year = st.radio(
+    "Season",
+    available_years if available_years else [current_year],
+    index=(available_years.index(default_year) if available_years else 0),
+    horizontal=True,
+    label_visibility="collapsed"
+)
+
+df_season = df[df["year"] == season_year].copy()
+
+# -------------------------------------------------------------
 #             MUSCLE EXTRACTION
 # -------------------------------------------------------------
 def extract_muscles(txt):
-    if not isinstance(txt,str): return []
+    if not isinstance(txt, str): return []
     return [x.split("(")[0].strip() for x in txt.split(",") if x.strip()]
 
 user_muscles = defaultdict(lambda: defaultdict(int))
 overall_muscles = defaultdict(int)
 
-for _,row in df.iterrows():
+for _, row in df_season.iterrows():
     user = row[col_name]
     muscs = extract_muscles(row[col_muscles])
     for m in muscs:
         user_muscles[user][m] += 1
         overall_muscles[m] += 1
 
-sessions = df.groupby(col_name).size()
-duration = df.groupby(col_name)["minutes"].sum()
+# Core metrics MUST use df_season
+sessions = df_season.groupby(col_name).size()
+duration = df_season.groupby(col_name)["minutes"].sum()
 
-df["date"] = df[col_timestamp].dt.date
-sessions_per_day = df.groupby("date").size().reset_index(name="sessions")
-sessions_per_day["7day_avg"] = sessions_per_day["sessions"].rolling(7,1).mean()
+df_season["date"] = df_season[col_timestamp].dt.date
+sessions_per_day = df_season.groupby("date").size().reset_index(name="sessions")
+sessions_per_day["7day_avg"] = sessions_per_day["sessions"].rolling(7, 1).mean()
 
 mus_df = pd.DataFrame({"Muscle": list(overall_muscles.keys()), "Count": list(overall_muscles.values())})
 hours_df = pd.DataFrame({"User": duration.index, "Hours": (duration/60).round(1)}).sort_values("Hours", ascending=False)
-activity_matrix = pd.DataFrame(user_muscles).fillna(0).astype(int).T
-users = sorted(df[col_name].unique())
+users = sorted(df_season[col_name].dropna().unique())
+
+# If no data in season, stop nicely
+if len(df_season) == 0:
+    st.warning(f"No data found for season {season_year}.")
+    st.stop()
 
 # -------------------------------------------------------------
 #               RANK SYSTEM LOGIC
 # -------------------------------------------------------------
 def get_rank_letter(n):
-    if n>=250: return "S"
-    if n>=180: return "A"
-    if n>=120: return "B"
-    if n>=60:  return "C"
-    if n>=30:  return "D"
+    if n >= 250: return "S"
+    if n >= 180: return "A"
+    if n >= 120: return "B"
+    if n >= 60:  return "C"
+    if n >= 30:  return "D"
     return "E"
 
 RANK_CONFIG = {
@@ -202,8 +230,9 @@ def render_rank_badge(letter):
     cfg = RANK_CONFIG[letter]
     return f"<span style='color:{cfg['color']};font-weight:800;'>{cfg['emoji']} {cfg['label']}</span>"
 
-consistency_map = {u: round((sessions[u]/365)*100,1) for u in sessions.index}
-rank_map = {u: get_rank_letter(sessions[u]) for u in sessions.index}
+# Season-based consistency + ranks
+consistency_map = {u: round((sessions[u]/365)*100, 1) for u in sessions.index}
+rank_map = {u: get_rank_letter(int(sessions[u])) for u in sessions.index}
 
 top_user = sessions.idxmax()
 top_user_rank_letter = rank_map[top_user]
@@ -228,7 +257,7 @@ border:1px solid #3ecbff;color:#aee6ff;font-size:16px;text-decoration:none;">
 #                TABS
 # -------------------------------------------------------------
 tab_profile, tab_lb, tab_activity, tab_dash, tab_ranks = st.tabs(
-    ["Profile","Leaderboards","Fitness Activity","Dashboard","Ranking System"]
+    ["Profile", "Leaderboards", "Fitness Activity", "Dashboard", "Ranking System"]
 )
 
 # -------------------------------------------------------------
@@ -247,25 +276,31 @@ with tab_profile:
 
     total_sessions_user = int(sessions[selected])
     total_minutes_user = int(duration[selected])
-    total_hours_user = round(total_minutes_user/60,1)
+    total_hours_user = round(total_minutes_user/60, 1)
     consistency_user = consistency_map[selected]
     rank_letter_user = rank_map[selected]
-
     rank_html = render_rank_badge(rank_letter_user)
 
-    today = dt.date.today()
-    season_end = dt.date(today.year,12,31)
-    days_left = (season_end - today).days
+    # Season header (uses chosen year)
+    if season_year == today.year:
+        season_date = today
+        season_end = dt.date(season_year, 12, 31)
+        days_left = (season_end - season_date).days
+        season_status = f"Ends in: {days_left} days"
+    else:
+        season_date = dt.date(season_year, 12, 31)
+        days_left = 0
+        season_status = "Season complete ✅"
 
     st.markdown(
-        f"<div class='summary-line'><b>Season:</b> {today.year} | "
-        f"<b>Date:</b> {today} | <b>Ends in:</b> {days_left} days</div>",
+        f"<div class='summary-line'><b>Season:</b> {season_year} | "
+        f"<b>Date:</b> {season_date} | <b>{season_status}</b></div>",
         unsafe_allow_html=True
     )
 
     st.markdown(f"<div class='sub-header'>{selected} – {rank_html}</div>", unsafe_allow_html=True)
 
-    c1,c2,c3,c4 = st.columns(4)
+    c1, c2, c3, c4 = st.columns(4)
     c1.markdown(f"<div class='stat-box'><div class='stat-value'>{total_sessions_user}</div><div class='stat-label'>Total Sessions</div></div>", unsafe_allow_html=True)
     c2.markdown(f"<div class='stat-box'><div class='stat-value'>{total_hours_user}</div><div class='stat-label'>Total Hours</div></div>", unsafe_allow_html=True)
     c3.markdown(f"<div class='stat-box'><div class='stat-value'>{days_left}</div><div class='stat-label'>Days Left</div></div>", unsafe_allow_html=True)
@@ -276,8 +311,8 @@ with tab_profile:
     # -------------------------------------------------------------
     st.markdown("<div class='sub-header'>📈 Progress to Next Rank</div>", unsafe_allow_html=True)
 
-    rank_thresholds = {"S":250,"A":180,"B":120,"C":60,"D":30,"E":0}
-    order = ["E","D","C","B","A","S"]
+    rank_thresholds = {"S":250, "A":180, "B":120, "C":60, "D":30, "E":0}
+    order = ["E", "D", "C", "B", "A", "S"]
 
     current_rank = rank_letter_user
     current_count = total_sessions_user
@@ -286,12 +321,12 @@ with tab_profile:
         next_rank = None
         next_threshold = 365
     else:
-        next_rank = order[order.index(current_rank)+1]
+        next_rank = order[order.index(current_rank) + 1]
         next_threshold = rank_thresholds[next_rank]
 
     current_threshold = rank_thresholds[current_rank]
-
-    progress = (current_count - current_threshold) / (next_threshold - current_threshold)
+    denom = (next_threshold - current_threshold) if (next_threshold - current_threshold) != 0 else 1
+    progress = (current_count - current_threshold) / denom
     progress = max(0, min(progress, 1))
 
     st.markdown(f"""
@@ -326,48 +361,51 @@ with tab_profile:
     # Top Muscles
     st.markdown("<div class='sub-header'>💪 Top Muscles Used</div>", unsafe_allow_html=True)
     top_df = pd.Series(user_muscles[selected]).sort_values(ascending=False).head(5)
-    st.dataframe(top_df.reset_index().rename(columns={"index":"Muscle",0:"Count"}), hide_index=True)
+    st.dataframe(top_df.reset_index().rename(columns={"index":"Muscle", 0:"Count"}), hide_index=True)
 
     # Least Muscles
     st.markdown("<div class='sub-header'>🩶 Least Used Muscles</div>", unsafe_allow_html=True)
     least_df = pd.Series(user_muscles[selected]).sort_values(ascending=True).head(5)
-    st.dataframe(least_df.reset_index().rename(columns={"index":"Muscle",0:"Count"}), hide_index=True)
+    st.dataframe(least_df.reset_index().rename(columns={"index":"Muscle", 0:"Count"}), hide_index=True)
 
-    # Workout Log
+    # Workout Log (season filtered)
     st.markdown("<div class='sub-header'>📘 Workout Log</div>", unsafe_allow_html=True)
-    log = df[df[col_name]==selected][[col_timestamp,col_muscles,col_duration]]
+    log = df_season[df_season[col_name] == selected][[col_timestamp, col_muscles, col_duration]]
     st.dataframe(log.sort_values(col_timestamp, ascending=False), hide_index=True)
 
+    # -------------------------------------------------------------
+    # 📉 MONTHLY TRAINING CONSISTENCY (season filtered) - INSIDE PROFILE TAB
+    # -------------------------------------------------------------
+    st.markdown("<div class='sub-header'>📉 Monthly Training Consistency</div>", unsafe_allow_html=True)
+
+    df_user = df_season[df_season[col_name] == selected].copy()
+    df_user["month"] = df_user[col_timestamp].dt.month
+    df_user["Month"] = df_user[col_timestamp].dt.strftime("%B")
+
+    monthly_sessions = (
+        df_user.groupby(["month", "Month"])
+        .size()
+        .reset_index(name="Sessions")
+        .sort_values("month")
+    )
+
+    if len(monthly_sessions) == 0:
+        st.info("No monthly data for this user in this season yet.")
+    else:
+        st.plotly_chart(
+            px.bar(
+                monthly_sessions,
+                x="Month",
+                y="Sessions",
+                text="Sessions",
+                title=None
+            ).update_traces(textposition="outside")
+             .update_layout(yaxis_title="Sessions", xaxis_title=""),
+            use_container_width=True
+        )
+
 # -------------------------------------------------------------
-# 📉 MONTHLY TRAINING CONSISTENCY
-# -------------------------------------------------------------
-st.markdown("<div class='sub-header'>📉 Monthly Training Consistency</div>", unsafe_allow_html=True)
-
-df_user = df[df[col_name] == selected].copy()
-df_user["month"] = df_user[col_timestamp].dt.month
-df_user["Month"] = df_user[col_timestamp].dt.strftime("%B")
-
-monthly_sessions = (
-    df_user.groupby(["month", "Month"])
-    .size()
-    .reset_index(name="Sessions")
-    .sort_values("month")
-)
-
-st.plotly_chart(
-    px.bar(
-        monthly_sessions,
-        x="Month",
-        y="Sessions",
-        text="Sessions",
-        title=None
-    ).update_traces(textposition="outside")
-     .update_layout(yaxis_title="Sessions", xaxis_title=""),
-    use_container_width=True
-)
-
-# -------------------------------------------------------------
-#                LEADERBOARD TAB
+#                LEADERBOARD TAB (season filtered)
 # -------------------------------------------------------------
 with tab_lb:
     st.markdown("<div class='glow-header'>Leaderboards</div>", unsafe_allow_html=True)
@@ -378,35 +416,47 @@ with tab_lb:
         "Hours": (duration.values/60).round(1),
         "Consistency %": [consistency_map[u] for u in sessions.index],
         "Rank": [rank_map[u] for u in sessions.index]
-    }).sort_values("Sessions",ascending=False).reset_index(drop=True)
+    }).sort_values("Sessions", ascending=False).reset_index(drop=True)
 
-    lb.insert(0,"Position", lb.index+1)
+    lb.insert(0, "Position", lb.index + 1)
     st.dataframe(lb, hide_index=True, use_container_width=True)
 
 # -------------------------------------------------------------
-#                FITNESS ACTIVITY TAB
+#                FITNESS ACTIVITY TAB (season filtered)
 # -------------------------------------------------------------
 with tab_activity:
     st.markdown("<div class='glow-header'>Fitness Activity</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='sub-header'>🔥 Most Trained Muscle Groups</div>", unsafe_allow_html=True)
-    st.plotly_chart(px.bar(mus_df.sort_values("Count",ascending=False), x="Muscle", y="Count"), use_container_width=True)
+    if len(mus_df) == 0:
+        st.info("No muscle data for this season.")
+    else:
+        st.plotly_chart(px.bar(mus_df.sort_values("Count", ascending=False), x="Muscle", y="Count"), use_container_width=True)
 
     st.markdown("<div class='sub-header'>⏳ Total Hours per Member</div>", unsafe_allow_html=True)
-    st.plotly_chart(px.bar(hours_df, x="User", y="Hours"), use_container_width=True)
+    if len(hours_df) == 0:
+        st.info("No duration data for this season.")
+    else:
+        st.plotly_chart(px.bar(hours_df, x="User", y="Hours"), use_container_width=True)
 
     st.markdown("<div class='sub-header'>💪 Muscle Distribution</div>", unsafe_allow_html=True)
-    st.plotly_chart(px.pie(mus_df, names="Muscle", values="Count", hole=0.45), use_container_width=True)
+    if len(mus_df) == 0:
+        st.info("No muscle distribution for this season.")
+    else:
+        st.plotly_chart(px.pie(mus_df, names="Muscle", values="Count", hole=0.45), use_container_width=True)
 
     st.markdown("<div class='sub-header'>📅 Training Frequency (7-Day Avg)</div>", unsafe_allow_html=True)
-    st.plotly_chart(px.line(sessions_per_day, x="date", y="7day_avg"), use_container_width=True)
+    if len(sessions_per_day) == 0:
+        st.info("No daily frequency data for this season.")
+    else:
+        st.plotly_chart(px.line(sessions_per_day, x="date", y="7day_avg"), use_container_width=True)
 
 # -------------------------------------------------------------
-#                DASHBOARD TAB
+#                DASHBOARD TAB (season filtered)
 # -------------------------------------------------------------
 with tab_dash:
     st.markdown("<div class='glow-header'>Dashboard Overview</div>", unsafe_allow_html=True)
-    st.dataframe(df.sort_values(col_timestamp, ascending=False).head(25), hide_index=True, use_container_width=True)
+    st.dataframe(df_season.sort_values(col_timestamp, ascending=False).head(25), hide_index=True, use_container_width=True)
 
 # -------------------------------------------------------------
 #                RANKING SYSTEM TAB
@@ -445,5 +495,4 @@ with tab_ranks:
         <tr class="e-rank"><td>E-Rank Athlete</td><td>E</td><td>0–29</td><td>0–8%</td></tr>
     </table>
     """
-
     components.html(rank_html, height=500, scrolling=False)
