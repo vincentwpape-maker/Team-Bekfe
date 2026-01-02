@@ -86,6 +86,19 @@ st.markdown(
         margin-bottom: 12px;
         color: #cce8ff;
     }
+
+    /* Make the season radio look like big "buttons" */
+    div[role="radiogroup"] label {
+        border: 1px solid #3fa9ff !important;
+        border-radius: 10px !important;
+        padding: 6px 14px !important;
+        margin-right: 10px !important;
+        background: rgba(10,25,45,0.55) !important;
+        box-shadow: 0 0 10px rgba(63,169,255,0.15);
+        cursor: pointer;
+        font-weight: 800;
+        color: #cce8ff !important;
+    }
     </style>
     """,
     unsafe_allow_html=True
@@ -102,9 +115,9 @@ CSV_URL = (
 
 @st.cache_data(ttl=300)
 def load_data():
-    df = pd.read_csv(CSV_URL)
-    df.columns = [c.strip() for c in df.columns]
-    return df
+    _df = pd.read_csv(CSV_URL)
+    _df.columns = [c.strip() for c in _df.columns]
+    return _df
 
 df = load_data()
 
@@ -116,7 +129,8 @@ col_name      = df.columns[1]
 col_muscles   = df.columns[3]
 col_duration  = df.columns[4]
 
-df[col_timestamp] = pd.to_datetime(df[col_timestamp], errors="coerce")
+# More robust parsing (helps when formats differ between years)
+df[col_timestamp] = pd.to_datetime(df[col_timestamp], errors="coerce", infer_datetime_format=True)
 
 def clean_name(n):
     if not isinstance(n, str): return ""
@@ -155,22 +169,45 @@ df["minutes"] = df[col_duration].apply(parse_duration)
 # -------------------------------------------------------------
 df["year"] = df[col_timestamp].dt.year
 
+# DEBUG: show what years the sheet actually contains
+with st.expander("🔎 Debug: Year counts (what seasons exist in your sheet)", expanded=False):
+    st.dataframe(df["year"].value_counts(dropna=False).sort_index())
+
 available_years = sorted([int(y) for y in df["year"].dropna().unique()])
 today = dt.date.today()
 current_year = today.year
 
-default_year = max(available_years) if available_years else current_year
+# If your sheet only has one year, we still show it.
+# If you want to ALWAYS show 2025/2026 even if empty, set FORCE_YEARS=True
+FORCE_YEARS = True
+forced_years = [2025, 2026]
+
+if FORCE_YEARS:
+    for y in forced_years:
+        if y not in available_years:
+            available_years.append(y)
+    available_years = sorted(available_years)
+
+if not available_years:
+    available_years = [current_year]
+
+default_year = 2026 if 2026 in available_years else max(available_years)
 
 st.markdown("<div class='sub-header'>📅 Select Season</div>", unsafe_allow_html=True)
 season_year = st.radio(
-    "Season",
-    available_years if available_years else [current_year],
-    index=(available_years.index(default_year) if available_years else 0),
-    horizontal=True,
-    label_visibility="collapsed"
+    "Select Season",
+    available_years,
+    index=available_years.index(default_year),
+    horizontal=True
 )
 
 df_season = df[df["year"] == season_year].copy()
+
+# If user clicks a year with no data, don't crash—show message but keep app alive.
+if len(df_season) == 0:
+    st.warning(f"No data found for season {season_year}. Add {season_year} entries to your Google Sheet to populate this season.")
+    # We can still render empty tabs safely by creating empty frames
+    df_season = df.iloc[0:0].copy()
 
 # -------------------------------------------------------------
 #             MUSCLE EXTRACTION
@@ -190,21 +227,19 @@ for _, row in df_season.iterrows():
         overall_muscles[m] += 1
 
 # Core metrics MUST use df_season
-sessions = df_season.groupby(col_name).size()
-duration = df_season.groupby(col_name)["minutes"].sum()
+sessions = df_season.groupby(col_name).size() if len(df_season) else pd.Series(dtype=int)
+duration = df_season.groupby(col_name)["minutes"].sum() if len(df_season) else pd.Series(dtype=int)
 
-df_season["date"] = df_season[col_timestamp].dt.date
-sessions_per_day = df_season.groupby("date").size().reset_index(name="sessions")
-sessions_per_day["7day_avg"] = sessions_per_day["sessions"].rolling(7, 1).mean()
+if len(df_season):
+    df_season["date"] = df_season[col_timestamp].dt.date
+    sessions_per_day = df_season.groupby("date").size().reset_index(name="sessions")
+    sessions_per_day["7day_avg"] = sessions_per_day["sessions"].rolling(7, 1).mean()
+else:
+    sessions_per_day = pd.DataFrame({"date": [], "sessions": [], "7day_avg": []})
 
 mus_df = pd.DataFrame({"Muscle": list(overall_muscles.keys()), "Count": list(overall_muscles.values())})
-hours_df = pd.DataFrame({"User": duration.index, "Hours": (duration/60).round(1)}).sort_values("Hours", ascending=False)
-users = sorted(df_season[col_name].dropna().unique())
-
-# If no data in season, stop nicely
-if len(df_season) == 0:
-    st.warning(f"No data found for season {season_year}.")
-    st.stop()
+hours_df = pd.DataFrame({"User": duration.index, "Hours": (duration/60).round(1)}).sort_values("Hours", ascending=False) if len(duration) else pd.DataFrame({"User": [], "Hours": []})
+users = sorted(df_season[col_name].dropna().unique()) if len(df_season) else []
 
 # -------------------------------------------------------------
 #               RANK SYSTEM LOGIC
@@ -230,13 +265,18 @@ def render_rank_badge(letter):
     cfg = RANK_CONFIG[letter]
     return f"<span style='color:{cfg['color']};font-weight:800;'>{cfg['emoji']} {cfg['label']}</span>"
 
-# Season-based consistency + ranks
-consistency_map = {u: round((sessions[u]/365)*100, 1) for u in sessions.index}
-rank_map = {u: get_rank_letter(int(sessions[u])) for u in sessions.index}
-
-top_user = sessions.idxmax()
-top_user_rank_letter = rank_map[top_user]
-top_user_sessions = int(sessions[top_user])
+if len(sessions):
+    consistency_map = {u: round((int(sessions[u])/365)*100, 1) for u in sessions.index}
+    rank_map = {u: get_rank_letter(int(sessions[u])) for u in sessions.index}
+    top_user = sessions.idxmax()
+    top_user_rank_letter = rank_map[top_user]
+    top_user_sessions = int(sessions[top_user])
+else:
+    consistency_map = {}
+    rank_map = {}
+    top_user = None
+    top_user_rank_letter = "E"
+    top_user_sessions = 0
 
 # -------------------------------------------------------------
 #                HEADER
@@ -266,22 +306,26 @@ tab_profile, tab_lb, tab_activity, tab_dash, tab_ranks = st.tabs(
 with tab_profile:
     st.markdown("<div class='glow-header'>Profile</div>", unsafe_allow_html=True)
 
+    if top_user is None:
+        st.info(f"No sessions found for season {season_year} yet.")
+        st.stop()
+
     featured_html = render_rank_badge(top_user_rank_letter)
     st.markdown(
         f"<div class='featured-line'>🏆 Featured Athlete: <b>{top_user}</b> – {featured_html} – <b>{top_user_sessions}</b> sessions</div>",
         unsafe_allow_html=True
     )
 
-    selected = st.selectbox("Select Member", users, index=users.index(top_user))
+    selected = st.selectbox("Select Member", users, index=users.index(top_user) if top_user in users else 0)
 
     total_sessions_user = int(sessions[selected])
     total_minutes_user = int(duration[selected])
     total_hours_user = round(total_minutes_user/60, 1)
-    consistency_user = consistency_map[selected]
-    rank_letter_user = rank_map[selected]
+    consistency_user = consistency_map.get(selected, 0)
+    rank_letter_user = rank_map.get(selected, "E")
     rank_html = render_rank_badge(rank_letter_user)
 
-    # Season header (uses chosen year)
+    # Season summary line
     if season_year == today.year:
         season_date = today
         season_end = dt.date(season_year, 12, 31)
@@ -306,9 +350,7 @@ with tab_profile:
     c3.markdown(f"<div class='stat-box'><div class='stat-value'>{days_left}</div><div class='stat-label'>Days Left</div></div>", unsafe_allow_html=True)
     c4.markdown(f"<div class='stat-box'><div class='stat-value'>{consistency_user}%</div><div class='stat-label'>Season Consistency</div></div>", unsafe_allow_html=True)
 
-    # -------------------------------------------------------------
-    # 🔵 PROGRESS BAR → Next Rank (Mana Surge Animation)
-    # -------------------------------------------------------------
+    # Progress to next rank
     st.markdown("<div class='sub-header'>📈 Progress to Next Rank</div>", unsafe_allow_html=True)
 
     rank_thresholds = {"S":250, "A":180, "B":120, "C":60, "D":30, "E":0}
@@ -358,24 +400,21 @@ with tab_profile:
 
     st.write(f"**{current_count} / {next_threshold} sessions to reach {next_rank or 'MAX'} Rank**")
 
-    # Top Muscles
+    # Top / least muscles
     st.markdown("<div class='sub-header'>💪 Top Muscles Used</div>", unsafe_allow_html=True)
     top_df = pd.Series(user_muscles[selected]).sort_values(ascending=False).head(5)
     st.dataframe(top_df.reset_index().rename(columns={"index":"Muscle", 0:"Count"}), hide_index=True)
 
-    # Least Muscles
     st.markdown("<div class='sub-header'>🩶 Least Used Muscles</div>", unsafe_allow_html=True)
     least_df = pd.Series(user_muscles[selected]).sort_values(ascending=True).head(5)
     st.dataframe(least_df.reset_index().rename(columns={"index":"Muscle", 0:"Count"}), hide_index=True)
 
-    # Workout Log (season filtered)
+    # Workout log
     st.markdown("<div class='sub-header'>📘 Workout Log</div>", unsafe_allow_html=True)
     log = df_season[df_season[col_name] == selected][[col_timestamp, col_muscles, col_duration]]
     st.dataframe(log.sort_values(col_timestamp, ascending=False), hide_index=True)
 
-    # -------------------------------------------------------------
-    # 📉 MONTHLY TRAINING CONSISTENCY (season filtered) - INSIDE PROFILE TAB
-    # -------------------------------------------------------------
+    # Monthly training consistency
     st.markdown("<div class='sub-header'>📉 Monthly Training Consistency</div>", unsafe_allow_html=True)
 
     df_user = df_season[df_season[col_name] == selected].copy()
@@ -405,24 +444,27 @@ with tab_profile:
         )
 
 # -------------------------------------------------------------
-#                LEADERBOARD TAB (season filtered)
+#                LEADERBOARD TAB
 # -------------------------------------------------------------
 with tab_lb:
     st.markdown("<div class='glow-header'>Leaderboards</div>", unsafe_allow_html=True)
 
-    lb = pd.DataFrame({
-        "User": sessions.index,
-        "Sessions": sessions.values,
-        "Hours": (duration.values/60).round(1),
-        "Consistency %": [consistency_map[u] for u in sessions.index],
-        "Rank": [rank_map[u] for u in sessions.index]
-    }).sort_values("Sessions", ascending=False).reset_index(drop=True)
+    if len(sessions) == 0:
+        st.info(f"No leaderboard data for season {season_year} yet.")
+    else:
+        lb = pd.DataFrame({
+            "User": sessions.index,
+            "Sessions": sessions.values,
+            "Hours": (duration.values/60).round(1),
+            "Consistency %": [consistency_map.get(u, 0) for u in sessions.index],
+            "Rank": [rank_map.get(u, "E") for u in sessions.index]
+        }).sort_values("Sessions", ascending=False).reset_index(drop=True)
 
-    lb.insert(0, "Position", lb.index + 1)
-    st.dataframe(lb, hide_index=True, use_container_width=True)
+        lb.insert(0, "Position", lb.index + 1)
+        st.dataframe(lb, hide_index=True, use_container_width=True)
 
 # -------------------------------------------------------------
-#                FITNESS ACTIVITY TAB (season filtered)
+#                FITNESS ACTIVITY TAB
 # -------------------------------------------------------------
 with tab_activity:
     st.markdown("<div class='glow-header'>Fitness Activity</div>", unsafe_allow_html=True)
@@ -452,7 +494,7 @@ with tab_activity:
         st.plotly_chart(px.line(sessions_per_day, x="date", y="7day_avg"), use_container_width=True)
 
 # -------------------------------------------------------------
-#                DASHBOARD TAB (season filtered)
+#                DASHBOARD TAB
 # -------------------------------------------------------------
 with tab_dash:
     st.markdown("<div class='glow-header'>Dashboard Overview</div>", unsafe_allow_html=True)
