@@ -10,7 +10,7 @@ from collections import defaultdict
 #                PAGE CONFIG
 # -------------------------------------------------------------
 st.set_page_config(
-    page_title="Team Bekfè Fitness Tracker",
+    page_title="Level Fit",
     layout="wide",
 )
 
