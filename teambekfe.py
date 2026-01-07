@@ -6,6 +6,12 @@ import datetime as dt
 import re
 from collections import defaultdict
 
+# OPTIONAL (only needed if you want to truly SAVE steps to Google Sheets)
+# If you don't set Streamlit secrets, the Steps tab will still work (preview + manual),
+# but it will show an error when you click "Save Steps".
+import gspread
+from google.oauth2.service_account import Credentials
+
 # -------------------------------------------------------------
 #                PAGE CONFIG
 # -------------------------------------------------------------
@@ -79,7 +85,7 @@ st.markdown(
 )
 
 # -------------------------------------------------------------
-#             LOAD GOOGLE SHEETS DATA
+#             GOOGLE SHEETS - WORKOUT DATA (READ)
 # -------------------------------------------------------------
 CSV_URL = (
     "https://docs.google.com/spreadsheets/d/"
@@ -94,6 +100,36 @@ def load_data():
     return _df
 
 df = load_data()
+
+# -------------------------------------------------------------
+#             OPTIONAL: GOOGLE SHEETS - STEPS (WRITE)
+# -------------------------------------------------------------
+def get_gspread_client():
+    """
+    Optional: configure Streamlit secrets to enable saving steps:
+    - st.secrets["gcp_service_account"]  (service account json dict)
+    - st.secrets["steps_sheet_id"]       (Google Sheet ID where you want a "Steps" tab)
+    """
+    try:
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ]
+        creds = Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"],
+            scopes=scopes
+        )
+        return gspread.authorize(creds)
+    except Exception:
+        return None
+
+def ensure_steps_worksheet(sh, title="Steps"):
+    try:
+        return sh.worksheet(title)
+    except Exception:
+        ws = sh.add_worksheet(title=title, rows="2000", cols="10")
+        ws.append_row(["timestamp", "user", "date", "steps", "note"])
+        return ws
 
 # -------------------------------------------------------------
 #             COLUMN SETUP
@@ -160,7 +196,6 @@ df["minutes"] = df[col_duration].apply(parse_duration)
 FORCE_YEARS = [2025, 2026]
 available_years = sorted({int(y) for y in df["year"].dropna().unique()} | set(FORCE_YEARS))
 today = dt.date.today()
-
 default_year = today.year if today.year in available_years else max(available_years)
 
 # -------------------------------------------------------------
@@ -272,8 +307,8 @@ else:
 # -------------------------------------------------------------
 #                TABS
 # -------------------------------------------------------------
-tab_profile, tab_lb, tab_activity, tab_dash, tab_ranks = st.tabs(
-    ["Profile", "Leaderboards", "Fitness Activity", "Dashboard", "Ranking System"]
+tab_profile, tab_steps, tab_lb, tab_activity, tab_dash, tab_ranks = st.tabs(
+    ["Profile", "Steps", "Leaderboards", "Fitness Activity", "Dashboard", "Ranking System"]
 )
 
 # -------------------------------------------------------------
@@ -398,6 +433,56 @@ with tab_profile:
             )
 
 # -------------------------------------------------------------
+#                STEPS TAB (OPTION C1: PREVIEW ONLY)
+# -------------------------------------------------------------
+with tab_steps:
+    st.markdown("<div class='glow-header'>Steps</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sub-header'>📸 Log Steps (Screenshot Preview Only)</div>", unsafe_allow_html=True)
+
+    if len(users) == 0:
+        st.warning("No users available for this season yet.")
+    else:
+        steps_user = st.selectbox("Select Member", users, key="steps_user")
+
+        img = st.file_uploader(
+            "Upload your steps screenshot (optional). This will NOT be stored.",
+            type=["png", "jpg", "jpeg", "webp"],
+            key="steps_img"
+        )
+        if img is not None:
+            st.image(img, caption="Preview (not saved)", use_container_width=True)
+
+        steps_date = st.date_input("Date", value=dt.date.today(), key="steps_date")
+        steps_value = st.number_input("Steps", min_value=0, step=100, value=0, key="steps_value")
+        note = st.text_input("Note (optional)", value="", key="steps_note")
+
+        if st.button("✅ Save Steps", use_container_width=True):
+            gc = get_gspread_client()
+            if gc is None:
+                st.error(
+                    "Steps logging is not connected to Google Sheets yet.\n\n"
+                    "To enable saving, add Streamlit secrets:\n"
+                    "- gcp_service_account\n"
+                    "- steps_sheet_id\n\n"
+                    "Until then: screenshot preview + manual entry works, but cannot save."
+                )
+            else:
+                try:
+                    sh = gc.open_by_key(st.secrets["steps_sheet_id"])
+                    ws = ensure_steps_worksheet(sh, "Steps")
+                    ws.append_row([
+                        dt.datetime.now().isoformat(),
+                        steps_user,
+                        steps_date.isoformat(),
+                        int(steps_value),
+                        note
+                    ])
+                    st.success(f"Saved ✅ {steps_user} • {steps_value:,} steps • {steps_date}")
+                    st.info("Screenshot was previewed only and NOT stored (C1).")
+                except Exception as e:
+                    st.error(f"Failed to save steps: {e}")
+
+# -------------------------------------------------------------
 #                LEADERBOARD TAB
 # -------------------------------------------------------------
 with tab_lb:
@@ -433,6 +518,12 @@ with tab_activity:
         st.info("No duration data for this season.")
     else:
         st.plotly_chart(px.bar(hours_df, x="User", y="Hours"), use_container_width=True)
+
+    st.markdown("<div class='sub-header'>💪 Muscle Distribution</div>", unsafe_allow_html=True)
+    if len(mus_df) == 0:
+        st.info("No muscle distribution for this season.")
+    else:
+        st.plotly_chart(px.pie(mus_df, names="Muscle", values="Count", hole=0.45), use_container_width=True)
 
     st.markdown("<div class='sub-header'>📅 Training Frequency (7-Day Avg)</div>", unsafe_allow_html=True)
     if len(sessions_per_day) == 0:
