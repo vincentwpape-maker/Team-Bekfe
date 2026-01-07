@@ -108,10 +108,8 @@ col_duration  = df.columns[4]
 # -------------------------------------------------------------
 def robust_to_datetime(series: pd.Series) -> pd.Series:
     s1 = pd.to_datetime(series, errors="coerce", infer_datetime_format=True)
-    # If too many NaT, try dayfirst parse as a second attempt
     if s1.isna().mean() > 0.20:
         s2 = pd.to_datetime(series, errors="coerce", dayfirst=True)
-        # keep whichever parsed more values
         if s2.notna().sum() > s1.notna().sum():
             return s2
     return s1
@@ -163,10 +161,12 @@ FORCE_YEARS = [2025, 2026]
 available_years = sorted({int(y) for y in df["year"].dropna().unique()} | set(FORCE_YEARS))
 today = dt.date.today()
 
-# default: current year if exists, else max available
 default_year = today.year if today.year in available_years else max(available_years)
 
-st.markdown("<div class='main-title'>Team Bekfè Fitness Tracker</div>", unsafe_allow_html=True)
+# -------------------------------------------------------------
+#                HEADER
+# -------------------------------------------------------------
+st.markdown("<div class='main-title'>Level Fit</div>", unsafe_allow_html=True)
 
 st.markdown("""
 ### Log Your Fitness Sessions  
@@ -186,10 +186,6 @@ season_year = st.radio(
     horizontal=True,
     key="season_year"
 )
-
-# Debug expander (so you can confirm what the sheet actually contains)
-with st.expander("🔎 Debug: Year counts in your Google Sheet", expanded=False):
-    st.dataframe(df["year"].value_counts(dropna=False).sort_index())
 
 df_season = df[df["year"] == season_year].copy()
 
