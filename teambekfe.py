@@ -6,12 +6,6 @@ import datetime as dt
 import re
 from collections import defaultdict
 
-# OPTIONAL (only needed if you want to truly SAVE steps to Google Sheets)
-# If you don't set Streamlit secrets, the Steps tab will still work (preview + manual),
-# but it will show an error when you click "Save Steps".
-import gspread
-from google.oauth2.service_account import Credentials
-
 # -------------------------------------------------------------
 #                PAGE CONFIG
 # -------------------------------------------------------------
@@ -85,7 +79,7 @@ st.markdown(
 )
 
 # -------------------------------------------------------------
-#             GOOGLE SHEETS - WORKOUT DATA (READ)
+#             LOAD GOOGLE SHEETS DATA (READ ONLY)
 # -------------------------------------------------------------
 CSV_URL = (
     "https://docs.google.com/spreadsheets/d/"
@@ -100,36 +94,6 @@ def load_data():
     return _df
 
 df = load_data()
-
-# -------------------------------------------------------------
-#             OPTIONAL: GOOGLE SHEETS - STEPS (WRITE)
-# -------------------------------------------------------------
-def get_gspread_client():
-    """
-    Optional: configure Streamlit secrets to enable saving steps:
-    - st.secrets["gcp_service_account"]  (service account json dict)
-    - st.secrets["steps_sheet_id"]       (Google Sheet ID where you want a "Steps" tab)
-    """
-    try:
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive",
-        ]
-        creds = Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
-            scopes=scopes
-        )
-        return gspread.authorize(creds)
-    except Exception:
-        return None
-
-def ensure_steps_worksheet(sh, title="Steps"):
-    try:
-        return sh.worksheet(title)
-    except Exception:
-        ws = sh.add_worksheet(title=title, rows="2000", cols="10")
-        ws.append_row(["timestamp", "user", "date", "steps", "note"])
-        return ws
 
 # -------------------------------------------------------------
 #             COLUMN SETUP
@@ -305,6 +269,12 @@ else:
     top_user_sessions = 0
 
 # -------------------------------------------------------------
+#                STEPS SESSION MEMORY (C1 START)
+# -------------------------------------------------------------
+if "steps_log" not in st.session_state:
+    st.session_state["steps_log"] = []  # list of dicts
+
+# -------------------------------------------------------------
 #                TABS
 # -------------------------------------------------------------
 tab_profile, tab_steps, tab_lb, tab_activity, tab_dash, tab_ranks = st.tabs(
@@ -335,7 +305,6 @@ with tab_profile:
         rank_letter_user = rank_map.get(selected, "E")
         rank_html = render_rank_badge(rank_letter_user)
 
-        # Season summary
         if season_year == today.year:
             season_date = today
             season_end = dt.date(season_year, 12, 31)
@@ -360,7 +329,6 @@ with tab_profile:
         c3.markdown(f"<div class='stat-box'><div class='stat-value'>{days_left}</div><div class='stat-label'>Days Left</div></div>", unsafe_allow_html=True)
         c4.markdown(f"<div class='stat-box'><div class='stat-value'>{consistency_user}%</div><div class='stat-label'>Season Consistency</div></div>", unsafe_allow_html=True)
 
-        # Progress bar
         st.markdown("<div class='sub-header'>📈 Progress to Next Rank</div>", unsafe_allow_html=True)
 
         rank_thresholds = {"S":250, "A":180, "B":120, "C":60, "D":30, "E":0}
@@ -404,7 +372,6 @@ with tab_profile:
 
         st.write(f"**{current_count} / {next_threshold} sessions to reach {next_rank or 'MAX'} Rank**")
 
-        # Muscles + Log
         st.markdown("<div class='sub-header'>💪 Top Muscles Used</div>", unsafe_allow_html=True)
         top_df = pd.Series(user_muscles[selected]).sort_values(ascending=False).head(5)
         st.dataframe(top_df.reset_index().rename(columns={"index":"Muscle", 0:"Count"}), hide_index=True)
@@ -413,7 +380,6 @@ with tab_profile:
         log = df_season[df_season[col_name] == selected][[col_timestamp, col_muscles, col_duration]]
         st.dataframe(log.sort_values(col_timestamp, ascending=False), hide_index=True)
 
-        # Monthly consistency
         st.markdown("<div class='sub-header'>📉 Monthly Training Consistency</div>", unsafe_allow_html=True)
         df_user = df_season[df_season[col_name] == selected].copy()
         df_user["month"] = df_user[col_timestamp].dt.month
@@ -433,7 +399,7 @@ with tab_profile:
             )
 
 # -------------------------------------------------------------
-#                STEPS TAB (OPTION C1: PREVIEW ONLY)
+#                STEPS TAB (C1: PREVIEW ONLY + SESSION LOG)
 # -------------------------------------------------------------
 with tab_steps:
     st.markdown("<div class='glow-header'>Steps</div>", unsafe_allow_html=True)
@@ -443,6 +409,9 @@ with tab_steps:
         st.warning("No users available for this season yet.")
     else:
         steps_user = st.selectbox("Select Member", users, key="steps_user")
+        steps_date = st.date_input("Date", value=dt.date.today(), key="steps_date")
+        steps_value = st.number_input("Steps", min_value=0, step=100, value=0, key="steps_value")
+        note = st.text_input("Note (optional)", value="", key="steps_note")
 
         img = st.file_uploader(
             "Upload your steps screenshot (optional). This will NOT be stored.",
@@ -452,35 +421,33 @@ with tab_steps:
         if img is not None:
             st.image(img, caption="Preview (not saved)", use_container_width=True)
 
-        steps_date = st.date_input("Date", value=dt.date.today(), key="steps_date")
-        steps_value = st.number_input("Steps", min_value=0, step=100, value=0, key="steps_value")
-        note = st.text_input("Note (optional)", value="", key="steps_note")
+        cA, cB = st.columns([1, 1])
+        with cA:
+            if st.button("✅ Save Steps (Session)", use_container_width=True):
+                st.session_state["steps_log"].append({
+                    "Season": season_year,
+                    "User": steps_user,
+                    "Date": steps_date.isoformat(),
+                    "Steps": int(steps_value),
+                    "Note": note
+                })
+                st.success("Saved to this session ✅ (C1: no cloud saving yet)")
 
-        if st.button("✅ Save Steps", use_container_width=True):
-            gc = get_gspread_client()
-            if gc is None:
-                st.error(
-                    "Steps logging is not connected to Google Sheets yet.\n\n"
-                    "To enable saving, add Streamlit secrets:\n"
-                    "- gcp_service_account\n"
-                    "- steps_sheet_id\n\n"
-                    "Until then: screenshot preview + manual entry works, but cannot save."
-                )
-            else:
-                try:
-                    sh = gc.open_by_key(st.secrets["steps_sheet_id"])
-                    ws = ensure_steps_worksheet(sh, "Steps")
-                    ws.append_row([
-                        dt.datetime.now().isoformat(),
-                        steps_user,
-                        steps_date.isoformat(),
-                        int(steps_value),
-                        note
-                    ])
-                    st.success(f"Saved ✅ {steps_user} • {steps_value:,} steps • {steps_date}")
-                    st.info("Screenshot was previewed only and NOT stored (C1).")
-                except Exception as e:
-                    st.error(f"Failed to save steps: {e}")
+        with cB:
+            if st.button("🧹 Clear Session Steps", use_container_width=True):
+                st.session_state["steps_log"] = []
+                st.info("Cleared session steps.")
+
+        st.markdown("<div class='sub-header'>📋 Steps Logged (This Session)</div>", unsafe_allow_html=True)
+        steps_df = pd.DataFrame(st.session_state["steps_log"])
+        if len(steps_df) == 0:
+            st.info("No steps saved in this session yet.")
+        else:
+            st.dataframe(
+                steps_df.sort_values(["Season", "User", "Date"], ascending=[False, True, False]),
+                hide_index=True,
+                use_container_width=True
+            )
 
 # -------------------------------------------------------------
 #                LEADERBOARD TAB
