@@ -107,12 +107,24 @@ col_duration  = df.columns[4]
 #             ROBUST DATE PARSE (2-PASS)
 # -------------------------------------------------------------
 def robust_to_datetime(series: pd.Series) -> pd.Series:
-    s1 = pd.to_datetime(series, errors="coerce", infer_datetime_format=True)
-    if s1.isna().mean() > 0.20:
-        s2 = pd.to_datetime(series, errors="coerce", dayfirst=True)
-        if s2.notna().sum() > s1.notna().sum():
-            return s2
-    return s1
+    try:
+        s1 = pd.to_datetime(series, errors="coerce")
+
+        if s1.isna().mean() > 0.20:
+            s2 = pd.to_datetime(
+                series.astype(str).str.strip(),
+                errors="coerce",
+                dayfirst=True
+            )
+
+            if s2.notna().sum() > s1.notna().sum():
+                return s2
+
+        return s1
+
+    except Exception as e:
+        st.error(f"Date parsing error: {e}")
+        return pd.Series(pd.NaT, index=series.index)
 
 df[col_timestamp] = robust_to_datetime(df[col_timestamp])
 df["year"] = df[col_timestamp].dt.year
